@@ -1,0 +1,69 @@
+# Lark Echo
+
+把飞书群聊接到你本地的 agent 会话上。
+
+在群里 @机器人 说话，就等于直接对某一条 agent 会话说话；会话的历史仍然留在你自己的机器上，终端和飞书只是它的两个视图。
+
+```
+飞书开放平台 ──WebSocket 长连接──> lark-echo daemon ──本地 IPC──> agent 进程
+                                        │
+                                        └─ 绑定 / 路由 / 串行队列 / 持久入站出站
+```
+
+## 特性
+
+- **免公网**：飞书长连接（WebSocket）模式，不需要公网 IP、域名或内网穿透
+- **显式绑定**：一个群只能属于一条会话；没绑定过的群 @ 也不会被响应
+- **一次性绑定码**：绑定凭据是会话侧签发的 6 位码（5 分钟 TTL、用后即废），**不是 session id**
+- **secret 不进会话**：app secret 只经 CLI 的 TTY 静默输入，永不进入会话 transcript / argv / shell history
+- **持久队列**：入站事件先落盘再分发，按 `event_id` 去重；出站按 `turn_id` 幂等重试
+- **按会话串行**：一条会话同一时刻只跑一个 turn，多个群同时来消息会排队并给出回执
+- **旁观消息作上下文**：群里没 @ 机器人的消息不进会话历史，只在下一次触发时作为只读上下文注入
+
+## 支持的 agent
+
+| agent | 状态 |
+|---|---|
+| [pi](https://pi.dev) | ✅ 已实现（`pi --mode rpc`） |
+| Claude Code | ⬜ 计划中 |
+| Codex CLI | ⬜ 计划中 |
+
+## 状态
+
+**M0a 开发中，尚不能端到端使用。**
+
+已完成：
+
+- `packages/core` — 统一消息协议、绑定与一次性码、入站/出站持久队列、按会话串行队列、pendingWindow
+- `packages/daemon` — 本地 IPC（Unix socket + JSONL）、会话池、idle 回收
+- `packages/adapter-pi` — `pi --mode rpc` 子进程驱动
+
+开发中：
+
+- `packages/channel-feishu` — 飞书长连接渠道
+- `packages/cli` — `lark-echo` 命令行
+
+## 开发
+
+需要 Node.js >= 24（用到内置 `node:sqlite` 和原生 TypeScript 类型擦除，无需构建步骤）。
+
+```bash
+npm install
+npm test           # 全部测试
+npm run test:unit  # 不依赖 pi 进程的部分
+npm run typecheck
+```
+
+`packages/adapter-pi` 的契约测试会真的拉起一个 `pi` 进程；本机没有安装 `pi` 时自动跳过。
+
+## 设计要点
+
+- **会话的 transcript 是唯一记忆**，飞书和终端都只是它的视图，不存第二份
+- **绑定基数**：`session 1:N chat`，`chat 1:1 session`。同一条会话绑的多个群**共享上下文**，不做隔离承诺；需要严格隔离就开两条会话
+- **绑定凭据是一次性码**：session id 是标识不是凭据（它会出现在导出、截图、resume 命令行里），所以只用作引用，不用作认证
+- **串行粒度是会话，不是群**：一条会话绑两个群时，按群串行会让两个群并发驱动同一个 agent
+- **不依赖 agent 扩展**：统一走「spawn 进程 + 喂 prompt + 收事件」，pi 与 Claude/Codex 同构
+
+## License
+
+[MIT](./LICENSE)
