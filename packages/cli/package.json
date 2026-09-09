@@ -1,0 +1,18 @@
+{
+  "name": "@lark-echo/cli",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "lark-echo": "./bin/lark-echo"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@lark-echo/adapter-pi": "0.0.1",
+    "@lark-echo/channel-feishu": "0.0.1",
+    "@lark-echo/core": "0.0.1",
+    "@lark-echo/daemon": "0.0.1"
+  }
+}

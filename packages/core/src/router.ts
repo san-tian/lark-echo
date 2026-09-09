@@ -15,7 +15,7 @@ export type InboundDecision =
  * 入站分流（§4.3 / §8）：
  * - 未绑定 → unbound（忽略 + 回「未绑定」）
  * - 话题群 → thread-unsupported（缺口 H：M0 明确提示不支持）
- * - 绑定者 @机器人 → trigger
+ * - 绑定者 @机器人 → trigger（`ownerOpenId === '*'` 表示任何人，仅用于本地调试）
  * - 其他一切 → context（进 pendingWindow，`contextVisibility: "all"`）
  */
 export function decideInbound(db: Db, msg: InboundMessage): InboundDecision {
@@ -23,7 +23,9 @@ export function decideInbound(db: Db, msg: InboundMessage): InboundDecision {
   const binding = getBinding(db, chatId);
   if (!binding) return { action: 'unbound' };
   if (msg.threadId) return { action: 'thread-unsupported', binding };
-  if (msg.mentioned && msg.actor.id === binding.ownerOpenId) return { action: 'trigger', binding };
+  if (msg.mentioned && (binding.ownerOpenId === '*' || msg.actor.id === binding.ownerOpenId)) {
+    return { action: 'trigger', binding };
+  }
   return { action: 'context', binding };
 }
 

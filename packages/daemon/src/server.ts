@@ -160,6 +160,8 @@ export class Daemon {
         return { released: true };
       case 'doctor':
         return { checks: await this.channel.doctor() };
+      case 'channel.chats':
+        return this.channel.listChats();
       case 'inbound.inject':
         if (!this.allowInjection) throw new Error('injection disabled');
         await this.dispatcher.handleInbound(params.message as never);

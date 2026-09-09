@@ -30,18 +30,17 @@
 
 ## 状态
 
-**M0a 开发中，尚不能端到端使用。**
+**M0a 已完成，真实链路已验证**：飞书群 @机器人 → daemon → pi 会话 → 回复回到群。
 
 已完成：
 
 - `packages/core` — 统一消息协议、绑定与一次性码、入站/出站持久队列、按会话串行队列、pendingWindow
 - `packages/daemon` — 本地 IPC（Unix socket + JSONL）、会话池、idle 回收
 - `packages/adapter-pi` — `pi --mode rpc` 子进程驱动
-
-开发中：
-
-- `packages/channel-feishu` — 飞书长连接渠道
+- `packages/channel-feishu` — 飞书 WebSocket 长连接渠道、mention 门控、4000 字分片
 - `packages/cli` — `lark-echo` 命令行
+
+下一步（M0b）：一次性码的群侧入口、租约、多群播报、转录监听器、`/feishu-*` 会话内命令。
 
 ## 开发
 
@@ -49,7 +48,7 @@
 
 ```bash
 npm install
-npm test           # 全部测试
+npm test           # 53 tests
 npm run test:unit  # 不依赖 pi 进程的部分
 npm run typecheck
 ```
@@ -63,6 +62,19 @@ npm run typecheck
 - **绑定凭据是一次性码**：session id 是标识不是凭据（它会出现在导出、截图、resume 命令行里），所以只用作引用，不用作认证
 - **串行粒度是会话，不是群**：一条会话绑两个群时，按群串行会让两个群并发驱动同一个 agent
 - **不依赖 agent 扩展**：统一走「spawn 进程 + 喂 prompt + 收事件」，pi 与 Claude/Codex 同构
+
+## 快速开始
+
+```bash
+npm install
+npx lark-echo connect <app_id>   # 粘贴 app secret（TTY 静默输入）
+npx lark-echo doctor             # 体检：凭据 / 权限 / 长连接
+npx lark-echo daemon start
+npx lark-echo chats              # 列出机器人所在的群
+npx lark-echo bind --owner <你的 open_id>
+```
+
+绑定后，在群里 @机器人 即可对话。
 
 ## License
 

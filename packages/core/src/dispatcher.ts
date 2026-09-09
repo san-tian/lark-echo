@@ -76,7 +76,10 @@ export class Dispatcher {
 
     if (decision.action === 'unbound') {
       log.info('inbound to unbound chat');
-      await this.reply(msg.conversationKey, '本群未绑定任何会话。请在 agent 会话里执行 /feishu-bind。');
+      await this.reply(
+        msg.conversationKey,
+        '本群未绑定任何会话。请在终端执行 lark-echo bind，或在 agent 会话中完成绑定。',
+      );
       markInbound(this.db, msg.id, 'done');
       return;
     }
@@ -111,10 +114,15 @@ export class Dispatcher {
     if (dropped) return;
     if (ahead > 0) {
       await this.channel
-        .receipt(msg.conversationKey, 'queued', `排队中（前面 ${ahead} 条 · 本会话正在响应其他群）`)
+        .receipt(msg.conversationKey, 'queued', {
+          text: `排队中（前面 ${ahead} 条 · 本会话正在响应其他群）`,
+          ...(msg.replyTo ? { replyTo: msg.replyTo } : {}),
+        })
         .catch(() => undefined);
     } else {
-      await this.channel.receipt(msg.conversationKey, 'seen').catch(() => undefined);
+      await this.channel
+        .receipt(msg.conversationKey, 'seen', msg.replyTo ? { replyTo: msg.replyTo } : {})
+        .catch(() => undefined);
     }
   }
 
@@ -127,7 +135,6 @@ export class Dispatcher {
     const chatId = chatIdOf(msg);
     const log = this.logger.child({ traceId, chatId, sessionId: ref.sessionId, eventId: msg.id });
     markInbound(this.db, msg.id, 'dispatched');
-    await this.channel.receipt(msg.conversationKey, 'started', '已开始处理').catch(() => undefined);
 
     let turnId = '';
     try {
@@ -159,7 +166,9 @@ export class Dispatcher {
       const text = result.text?.trim();
       if (text) await this.deliver(msg.conversationKey, turnId, text, msg.replyTo);
       markInbound(this.db, msg.id, 'done');
-      await this.channel.receipt(msg.conversationKey, 'done').catch(() => undefined);
+      await this.channel
+        .receipt(msg.conversationKey, 'done', msg.replyTo ? { replyTo: msg.replyTo } : {})
+        .catch(() => undefined);
     } catch (err) {
       log.error('turn threw', { turnId, error: String(err) });
       markInbound(this.db, msg.id, 'dropped');

@@ -29,11 +29,24 @@ export interface Channel {
   start(onInbound: (msg: InboundMessage) => void): Promise<void>;
   stop(): Promise<void>;
   send(msg: OutboundMessage): Promise<OutboundResult>;
-  /** 轻量回执（👀 / 排队中 / 已开始处理），失败不应影响主流程 */
-  receipt(conversationKey: ConversationKey, kind: ReceiptKind, text?: string): Promise<void>;
+  /**
+   * 轻量回执，失败不应影响主流程。
+   * - `seen`：渠道应尽量用表情回应（比文字轻）
+   * - `queued`：带 `text` 说明排队情况
+   * - `started`：可选，已由 `seen` 覆盖时渠道可忽略
+   * - `done`：收尾（撤掉处理中的表情 / 换成完成态）
+   */
+  receipt(conversationKey: ConversationKey, kind: ReceiptKind, opts?: ReceiptOptions): Promise<void>;
   /** 机器人所在的群，供 `/feishu-bind` 面板使用 */
   listChats(): Promise<ChatInfo[]>;
   doctor(): Promise<DoctorCheck[]>;
+}
+
+export interface ReceiptOptions {
+  /** 文字回执内容（仅 queued 这类需要说明的场景） */
+  text?: string;
+  /** 触发消息的 id；有它时渠道可以打表情回应而不是发文字 */
+  replyTo?: string;
 }
 
 export type ReceiptKind = 'seen' | 'queued' | 'started' | 'done';

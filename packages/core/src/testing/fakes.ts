@@ -14,12 +14,12 @@ import type {
   TurnResult,
   UserMessage,
 } from '../types.ts';
-import type { Channel, ChatInfo, DoctorCheck, OutboundResult, ReceiptKind } from '../channel.ts';
+import type { Channel, ChatInfo, DoctorCheck, OutboundResult, ReceiptKind, ReceiptOptions } from '../channel.ts';
 import type { SessionDriver } from '../session-driver.ts';
 
 export interface FakeChannelState {
   sent: OutboundMessage[];
-  receipts: { conversationKey: ConversationKey; kind: ReceiptKind; text?: string }[];
+  receipts: { conversationKey: ConversationKey; kind: ReceiptKind; opts?: ReceiptOptions }[];
   chats: ChatInfo[];
   /** 下一次 send 抛错（测试出站重试） */
   failNextSend: boolean;
@@ -28,7 +28,7 @@ export interface FakeChannelState {
 export class FakeChannel implements Channel {
   readonly id = 'feishu' as const;
   readonly sent: OutboundMessage[] = [];
-  readonly receipts: { conversationKey: ConversationKey; kind: ReceiptKind; text?: string }[] = [];
+  readonly receipts: { conversationKey: ConversationKey; kind: ReceiptKind; opts?: ReceiptOptions }[] = [];
   chats: ChatInfo[] = [];
   failNextSend = false;
   private onInbound?: (msg: InboundMessage) => void;
@@ -47,8 +47,12 @@ export class FakeChannel implements Channel {
     this.sent.push(msg);
     return { messageId: `fake-msg-${this.sent.length}` };
   }
-  async receipt(key: ConversationKey, kind: ReceiptKind, text?: string): Promise<void> {
-    this.receipts.push({ conversationKey: key, kind, ...(text ? { text } : {}) });
+  async receipt(
+    key: ConversationKey,
+    kind: ReceiptKind,
+    opts?: ReceiptOptions,
+  ): Promise<void> {
+    this.receipts.push({ conversationKey: key, kind, ...(opts ? { opts } : {}) });
   }
   async listChats(): Promise<ChatInfo[]> {
     return this.chats;
