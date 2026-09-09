@@ -164,6 +164,13 @@ export function deleteBindCode(db: Db, code: string): boolean {
   return Number(db.prepare('DELETE FROM bind_codes WHERE code = ?').run(code).changes) > 0;
 }
 
+/** 配置台展示用：列出未过期的绑定码 */
+export function listBindCodes(db: Db, now = Date.now()): BindCode[] {
+  return asRows<BindCodeRow>(
+    db.prepare('SELECT * FROM bind_codes WHERE expires_at > ? ORDER BY created_at DESC').all(now),
+  ).map(toBindCode);
+}
+
 export function pruneExpiredBindCodes(db: Db, now = Date.now()): number {
   return Number(db.prepare('DELETE FROM bind_codes WHERE expires_at <= ?').run(now).changes);
 }

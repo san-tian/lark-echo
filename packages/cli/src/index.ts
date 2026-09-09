@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync, statSync, unlinkSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -17,6 +18,7 @@ import {
   saveCredential,
   setMirrorMode,
   setSessionModel,
+  writeSecretFile,
   type Binding,
   type DoctorCheck,
 } from '@lark-echo/core';
@@ -468,6 +470,31 @@ async function cmdChats(): Promise<number> {
   }
 }
 
+/* ----------------------------------- ui ---------------------------------- */
+
+async function cmdUi(args: Args): Promise<number> {
+  if (args.flags.stop) {
+    await withIpc((c) => c.call('ui.stop'));
+    ok('配置台已关闭');
+    return 0;
+  }
+  const token = randomBytes(24).toString('hex');
+  ensureHome();
+  writeSecretFile(paths.uiToken(), token);
+  const port = flag(args, 'port') ? Number(flag(args, 'port')) : 0;
+  const res = await withIpc((c) => c.call<{ url: string }>('ui.start', { token, port }));
+  if (!res) {
+    fail('daemon 未运行，先执行 lark-echo daemon start');
+    return 1;
+  }
+  ok(`配置台已启动: ${res.url}`);
+  print('  （仅监听 127.0.0.1，30 分钟无操作自动关闭；lark-echo ui --stop 可手动关）');
+  if (!args.flags['no-open']) {
+    spawn('xdg-open', [res.url], { stdio: 'ignore', detached: true }).unref();
+  }
+  return 0;
+}
+
 /* --------------------------------- status -------------------------------- */
 
 async function cmdStatus(): Promise<number> {
@@ -503,6 +530,7 @@ function usage(): void {
   lark-echo model <session_id> [<provider>/<model>]  查看/设置模型
   lark-echo models <session_id>           列出可切换的模型（需会话在运行）
   lark-echo sessions [--release <session_id>]
+  lark-echo ui [--port N] [--no-open]        本地 Web 配置台（127.0.0.1）
   lark-echo status
 
 环境变量:
@@ -539,6 +567,8 @@ async function main(): Promise<number> {
       return cmdModels(args);
     case 'sessions':
       return cmdSessions(args);
+    case 'ui':
+      return cmdUi(args);
     case 'status':
       return cmdStatus();
     case undefined:

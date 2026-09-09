@@ -7,6 +7,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@lark-echo/core": "0.0.1"
+    "@lark-echo/core": "0.0.1",
+    "@lark-echo/ui": "0.0.1"
   }
 }

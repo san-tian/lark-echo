@@ -26,6 +26,8 @@ import {
 } from '@lark-echo/core';
 import { IpcServer, type IpcParams } from './ipc.ts';
 import { SessionPool } from './session-pool.ts';
+import { UiData } from './ui-data.ts';
+import { UiServer } from './http.ts';
 
 export interface DaemonOptions {
   db: Db;
@@ -62,6 +64,8 @@ export class Daemon {
   private readonly channel: Channel;
   private readonly logger: Logger;
   private readonly ipc: IpcServer;
+  private readonly uiData: UiData;
+  private ui?: UiServer;
   private readonly timers: NodeJS.Timeout[] = [];
   private readonly allowInjection: boolean;
   private readonly flushIntervalMs: number;
@@ -86,6 +90,14 @@ export class Daemon {
       channel: opts.channel,
       driver: this.pool,
       queue: this.queue,
+      logger: this.logger,
+    });
+    this.uiData = new UiData({
+      db: opts.db,
+      channel: opts.channel,
+      pool: this.pool,
+      flushOutbound: () => this.dispatcher.flushOutbound(),
+      pendingInbound: () => countPendingInbound(this.db),
       logger: this.logger,
     });
     this.ipc = new IpcServer(
@@ -114,6 +126,8 @@ export class Daemon {
   async stop(): Promise<void> {
     for (const timer of this.timers) clearInterval(timer);
     this.timers.length = 0;
+    await this.ui?.close().catch(() => undefined);
+    this.ui = undefined;
     await this.channel.stop().catch(() => undefined);
     await this.pool.closeAll();
     await this.ipc.close();
@@ -174,6 +188,23 @@ export class Daemon {
         return this.listModels(String(params.sessionId));
       case 'doctor':
         return { checks: await this.channel.doctor() };
+      case 'ui.start': {
+        await this.ui?.close().catch(() => undefined);
+        this.ui = new UiServer({
+          data: this.uiData,
+          token: String(params.token ?? ''),
+          ...(params.port ? { port: Number(params.port) } : {}),
+          logger: this.logger,
+        });
+        const { url } = await this.ui.start();
+        return { url };
+      }
+      case 'ui.stop':
+        await this.ui?.close().catch(() => undefined);
+        this.ui = undefined;
+        return { stopped: true };
+      case 'ui.status':
+        return { running: Boolean(this.ui?.listening) };
       case 'channel.chats':
         return this.channel.listChats();
       case 'inbound.inject':

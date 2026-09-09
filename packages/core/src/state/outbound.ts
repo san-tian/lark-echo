@@ -95,3 +95,14 @@ export function listOutboundByTurn(db: Db, turnId: string): OutboundRecord[] {
     db.prepare('SELECT * FROM outbound_messages WHERE turn_id = ? ORDER BY seq').all(turnId),
   ).map(toRecord);
 }
+
+/** 配置台用：丢弃一条出站消息（不再重试） */
+export function discardOutbound(db: Db, id: number): boolean {
+  return (
+    Number(
+      db
+        .prepare(`UPDATE outbound_messages SET status = 'failed' WHERE id = ? AND status = 'pending'`)
+        .run(id).changes,
+    ) > 0
+  );
+}
