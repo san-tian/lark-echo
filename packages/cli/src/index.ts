@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync, statSync, unlinkSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -472,23 +472,75 @@ async function cmdChats(): Promise<number> {
 
 /* ----------------------------------- ui ---------------------------------- */
 
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1']);
+
+/** 取 tailnet 地址与 MagicDNS 名（决策 18） */
+function tailscaleInfo(): { ip?: string; dnsName?: string } {
+  const sh = (cmd: string, args: string[]): string | undefined => {
+    try {
+      return execFileSync(cmd, args, { encoding: 'utf8', timeout: 5000 }).trim();
+    } catch {
+      return undefined;
+    }
+  };
+  const ip = sh('tailscale', ['ip', '-4'])?.split('\n')[0]?.trim();
+  let dnsName: string | undefined;
+  const raw = sh('tailscale', ['status', '--json']);
+  if (raw) {
+    try {
+      const self = (JSON.parse(raw) as { Self?: { DNSName?: string } }).Self;
+      dnsName = self?.DNSName?.replace(/\.$/, '');
+    } catch {
+      /* ignore */
+    }
+  }
+  return { ...(ip ? { ip } : {}), ...(dnsName ? { dnsName } : {}) };
+}
+
 async function cmdUi(args: Args): Promise<number> {
   if (args.flags.stop) {
     await withIpc((c) => c.call('ui.stop'));
     ok('配置台已关闭');
     return 0;
   }
-  const token = randomBytes(24).toString('hex');
+
+  const allowHosts: string[] = [];
+  let host = flag(args, 'host') ?? '127.0.0.1';
+  if (args.flags.tailscale) {
+    const ts = tailscaleInfo();
+    if (!ts.ip) {
+      fail('拿不到 tailscale 地址，确认 tailscale 已启动');
+      return 1;
+    }
+    host = ts.ip;
+    allowHosts.push(ts.ip);
+    if (ts.dnsName) allowHosts.push(ts.dnsName);
+  }
+  const loopback = LOOPBACK_HOSTS.has(host);
+  const useAuth = !args.flags['no-auth'] && !loopback;
+  if (!loopback && !useAuth) {
+    print('⚠ 绑非本机地址且未开启鉴权：tailnet/局域网内任何能访问该端口的人都能操作这个控制台');
+    print('  （可以绑定群聊到一条能执行 shell 的 agent 会话，建议加回 token）');
+  }
+
+  const token = useAuth ? randomBytes(24).toString('hex') : undefined;
   ensureHome();
-  writeSecretFile(paths.uiToken(), token);
+  if (token) writeSecretFile(paths.uiToken(), token);
   const port = flag(args, 'port') ? Number(flag(args, 'port')) : 0;
-  const res = await withIpc((c) => c.call<{ url: string }>('ui.start', { token, port }));
+  const res = await withIpc((c) =>
+    c.call<{ url: string }>('ui.start', {
+      ...(token ? { token } : {}),
+      host,
+      allowHosts,
+      port,
+    }),
+  );
   if (!res) {
     fail('daemon 未运行，先执行 lark-echo daemon start');
     return 1;
   }
   ok(`配置台已启动: ${res.url}`);
-  print('  （仅监听 127.0.0.1，30 分钟无操作自动关闭；lark-echo ui --stop 可手动关）');
+  print(`  监听 ${host} · ${useAuth ? '需要 token' : '无鉴权'} · 30 分钟无操作自动关闭`);
   if (!args.flags['no-open']) {
     spawn('xdg-open', [res.url], { stdio: 'ignore', detached: true }).unref();
   }
@@ -530,7 +582,7 @@ function usage(): void {
   lark-echo model <session_id> [<provider>/<model>]  查看/设置模型
   lark-echo models <session_id>           列出可切换的模型（需会话在运行）
   lark-echo sessions [--release <session_id>]
-  lark-echo ui [--port N] [--no-open]        本地 Web 配置台（127.0.0.1）
+  lark-echo ui [--host <addr>] [--tailscale] [--port N] [--no-auth] [--no-open] [--stop]
   lark-echo status
 
 环境变量:

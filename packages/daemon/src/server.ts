@@ -192,12 +192,16 @@ export class Daemon {
         await this.ui?.close().catch(() => undefined);
         this.ui = new UiServer({
           data: this.uiData,
-          token: String(params.token ?? ''),
+          ...(params.token ? { token: String(params.token) } : {}),
+          ...(params.host ? { host: String(params.host) } : {}),
+          ...(Array.isArray(params.allowHosts)
+            ? { allowHosts: params.allowHosts.map(String) }
+            : {}),
           ...(params.port ? { port: Number(params.port) } : {}),
           logger: this.logger,
         });
-        const { url } = await this.ui.start();
-        return { url };
+        const { url, host } = await this.ui.start();
+        return { url, host };
       }
       case 'ui.stop':
         await this.ui?.close().catch(() => undefined);

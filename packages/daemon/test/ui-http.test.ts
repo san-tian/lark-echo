@@ -11,8 +11,15 @@ const stubData = {
   action: async (path: string) => ({ ok: path }),
 } as unknown as UiData;
 
-async function startServer() {
-  const server = new UiServer({ data: stubData, token: TOKEN, port: 0, idleMs: 60_000 });
+async function startServer(overrides: { token?: string; allowHosts?: string[] } = {}) {
+  const server = new UiServer({
+    data: stubData,
+    // 'token' in overrides 时用显式值（undefined = 无鉴权）
+    ...('token' in overrides ? (overrides.token ? { token: overrides.token } : {}) : { token: TOKEN }),
+    ...(overrides.allowHosts ? { allowHosts: overrides.allowHosts } : {}),
+    port: 0,
+    idleMs: 60_000,
+  });
   const { url, port } = await server.start();
   return { server, url, port, base: `http://127.0.0.1:${port}` };
 }
@@ -130,5 +137,53 @@ test('GET 不能触发写操作', async () => {
   const { cookie } = await login(base);
   const res = await fetch(base + '/api/bind', { headers: { cookie } });
   assert.equal(res.status, 405);
+  await server.close();
+});
+
+/* ---------------- 决策 18：loopback 免鉴权 / 非 loopback 要鉴权 ---------------- */
+
+test('无 token 模式：首页直接可用，但仍需 CSRF', async () => {
+  const { server, base } = await startServer({ token: undefined });
+  const res = await fetch(base + '/', { redirect: 'manual' });
+  assert.equal(res.status, 200);
+  const cookie = (res.headers.getSetCookie?.() ?? []).map((c) => c.split(';')[0]).join('; ');
+  assert.match(cookie, /le_sid=/);
+  const html = await res.text();
+  const csrf = /data-csrf="([^"]+)"/.exec(html)?.[1];
+  assert.ok(csrf);
+
+  const state = await fetch(base + '/api/state', { headers: { cookie } });
+  assert.equal(state.status, 200);
+
+  const noCsrf = await fetch(base + '/api/bind', {
+    method: 'POST',
+    headers: { cookie, 'content-type': 'application/json' },
+    body: '{}',
+  });
+  assert.equal(noCsrf.status, 403);
+  await server.close();
+});
+
+test('无 token 模式：未取 cookie 直接打 API → 401', async () => {
+  const { server, base } = await startServer({ token: undefined });
+  const res = await fetch(base + '/api/state');
+  assert.equal(res.status, 401);
+  await server.close();
+});
+
+test('Host 白名单：加进去的 tailnet 名不再被 403', async () => {
+  const { server, port } = await startServer({ allowHosts: ['macaron-dev'] });
+  const status = await new Promise<number>((resolve, reject) => {
+    const req = request(
+      { host: '127.0.0.1', port, path: '/', method: 'GET', headers: { host: 'macaron-dev' } },
+      (res) => {
+        res.resume();
+        resolve(res.statusCode ?? 0);
+      },
+    );
+    req.on('error', reject);
+    req.end();
+  });
+  assert.equal(status, 401, '白名单内应是未登录而不是 403');
   await server.close();
 });

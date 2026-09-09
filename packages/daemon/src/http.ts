@@ -7,8 +7,15 @@ import type { UiData } from './ui-data.ts';
 
 export interface UiServerOptions {
   data: UiData;
-  /** 能力 token：只从 `lark-echo ui` 的 URL 传一次，换 cookie 后即失效（§4.4.3） */
-  token: string;
+  /**
+   * 能力 token。**设了就需要它换 cookie；不设则直接放行**（决策 18）。
+   * 约定：绑 loopback 时不设（本地单人使用）；绑非 loopback 时必设。
+   */
+  token?: string;
+  /** 监听地址，默认 127.0.0.1 */
+  host?: string;
+  /** 额外的合法 Host（如 tailnet 的 MagicDNS 名） */
+  allowHosts?: string[];
   port?: number;
   idleMs?: number;
   logger?: Logger;
@@ -20,16 +27,22 @@ interface UiSession {
 }
 
 const MAX_BODY = 64 * 1024;
+const LOOPBACK = new Set(['127.0.0.1', 'localhost', '::1', '[::1]']);
 
 /**
  * 本地 Web 配置台（DESIGN §4.4）。
- * 安全面按 §4.4.3 实现：只监听 127.0.0.1、Host/Origin 校验（防 DNS rebinding）、
- * 能力 token 换 httpOnly cookie、写操作要 CSRF、空闲自动关端口。
+ * 安全面按 §4.4.3 + 决策 18：
+ * - 默认只监听 127.0.0.1
+ * - `--host` 可绑 tailnet 地址；Host 头白名单 = loopback + 绑定地址 + 额外白名单（防 DNS rebinding）
+ * - 绑非 loopback 时默认要求能力 token；显式 `--no-auth` 才关（会打印警告）
+ * - 写操作一律要 CSRF + Origin 校验，与是否鉴权无关
+ * - 空闲自动关端口
  */
 export class UiServer {
   private readonly opts: UiServerOptions;
   private readonly logger: Logger;
   private readonly sessions = new Map<string, UiSession>();
+  private readonly allowHosts: Set<string>;
   private server?: Server;
   private idleTimer?: NodeJS.Timeout;
   private port = 0;
@@ -37,10 +50,15 @@ export class UiServer {
   constructor(opts: UiServerOptions) {
     this.opts = opts;
     this.logger = opts.logger ?? createLogger({ svc: 'ui-http' });
+    this.allowHosts = new Set(LOOPBACK);
+    for (const h of opts.allowHosts ?? []) this.allowHosts.add(h);
+    const host = opts.host ?? '127.0.0.1';
+    if (host !== '0.0.0.0' && host !== '::') this.allowHosts.add(host);
   }
 
-  async start(): Promise<{ url: string; port: number }> {
-    if (this.server) return { url: this.url(), port: this.port };
+  async start(): Promise<{ url: string; port: number; host: string }> {
+    const host = this.opts.host ?? '127.0.0.1';
+    if (this.server) return { url: this.url(), port: this.port, host };
     this.server = createServer((req, res) => {
       void this.handle(req, res).catch((err: unknown) => {
         this.logger.error('ui request failed', { error: String(err) });
@@ -49,12 +67,12 @@ export class UiServer {
     });
     await new Promise<void>((resolve, reject) => {
       this.server!.once('error', reject);
-      this.server!.listen(this.opts.port ?? 0, '127.0.0.1', () => resolve());
+      this.server!.listen(this.opts.port ?? 0, host, () => resolve());
     });
     this.port = (this.server.address() as AddressInfo).port;
     this.touch();
-    this.logger.info('ui listening', { port: this.port });
-    return { url: this.url(), port: this.port };
+    this.logger.info('ui listening', { host, port: this.port, auth: Boolean(this.opts.token) });
+    return { url: this.url(), port: this.port, host };
   }
 
   async close(): Promise<void> {
@@ -73,7 +91,9 @@ export class UiServer {
   }
 
   private url(): string {
-    return `http://127.0.0.1:${this.port}/?t=${this.opts.token}`;
+    const host = this.opts.host ?? '127.0.0.1';
+    const base = `http://${host}:${this.port}/`;
+    return this.opts.token ? `${base}?t=${this.opts.token}` : base;
   }
 
   private touch(): void {
@@ -87,34 +107,36 @@ export class UiServer {
   }
 
   private async handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
-    // 防 DNS rebinding：只接受本机 Host（§4.4.3）
     const host = (req.headers.host ?? '').replace(/:\d+$/, '');
-    if (host !== '127.0.0.1' && host !== 'localhost') {
+    if (!this.allowHosts.has(host)) {
       this.logger.warn('ui rejected bad host', { host });
       return this.send(res, 403, 'forbidden host');
     }
     const url = new URL(req.url ?? '/', `http://${req.headers.host}`);
     const nonce = randomBytes(16).toString('base64');
 
-    // 一次性 token → 换 httpOnly cookie
-    if (url.pathname === '/' && url.searchParams.has('t')) {
-      if (!safeEqual(url.searchParams.get('t')!, this.opts.token)) {
-        this.logger.warn('ui rejected bad token');
-        return this.send(res, 401, 'bad token');
+    const sid = cookie(req.headers.cookie, 'le_sid');
+    let session = sid ? this.sessions.get(sid) : undefined;
+
+    if (this.opts.token) {
+      // 一次性 token → httpOnly cookie，并重定向掉 URL 里的 token
+      if (url.pathname === '/' && url.searchParams.has('t')) {
+        if (!safeEqual(url.searchParams.get('t')!, this.opts.token)) {
+          this.logger.warn('ui rejected bad token');
+          return this.send(res, 401, 'bad token');
+        }
+        this.newSession(res);
+        res.writeHead(302, { Location: '/' });
+        res.end();
+        return;
       }
-      const sid = randomBytes(24).toString('hex');
-      this.sessions.set(sid, { csrf: randomBytes(18).toString('hex'), lastSeen: Date.now() });
-      res.setHeader('Set-Cookie', `le_sid=${sid}; HttpOnly; SameSite=Strict; Path=/`);
-      res.writeHead(302, { Location: '/' });
-      res.end();
-      return;
+      if (!session) return this.send(res, 401, '请从 lark-echo ui 打开的链接访问');
+    } else if (!session) {
+      // 无鉴权模式：首次访问首页即建立会话（仍需 cookie 才能带 CSRF）
+      if (url.pathname !== '/') return this.send(res, 401, '请先打开配置台首页');
+      session = this.newSession(res);
     }
 
-    const sid = cookie(req.headers.cookie, 'le_sid');
-    const session = sid ? this.sessions.get(sid) : undefined;
-    if (!session) {
-      return this.send(res, 401, '请从 lark-echo ui 打开的链接访问');
-    }
     session.lastSeen = Date.now();
     this.touch();
 
@@ -130,7 +152,6 @@ export class UiServer {
       if (req.method !== 'POST' && req.method !== 'DELETE') {
         return this.json(res, 405, { error: 'method not allowed' });
       }
-      // 防 CSRF：Origin 必须是本机 + 自定义头必须匹配（§4.4.3）
       const origin = req.headers.origin;
       if (origin) {
         let hostname = '';
@@ -139,7 +160,7 @@ export class UiServer {
         } catch {
           hostname = 'invalid';
         }
-        if (hostname !== '127.0.0.1' && hostname !== 'localhost') {
+        if (!this.allowHosts.has(hostname)) {
           this.logger.warn('ui rejected bad origin', { origin });
           return this.json(res, 403, { error: 'forbidden origin' });
         }
@@ -155,6 +176,14 @@ export class UiServer {
     }
 
     return this.send(res, 404, 'not found');
+  }
+
+  private newSession(res: ServerResponse): UiSession {
+    const sid = randomBytes(24).toString('hex');
+    const session: UiSession = { csrf: randomBytes(18).toString('hex'), lastSeen: Date.now() };
+    this.sessions.set(sid, session);
+    res.setHeader('Set-Cookie', `le_sid=${sid}; HttpOnly; SameSite=Strict; Path=/`);
+    return session;
   }
 
   private send(res: ServerResponse, status: number, text: string): void {
