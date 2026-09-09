@@ -103,6 +103,8 @@ export class CodexAdapter implements AgentAdapter {
     approvals: false,
     // 模型只能通过下一轮进程的 `-m` 生效，没有运行时切换接口（spike §3）
     modelSwitch: 'restart',
+    // codex 自己生成 thread id（ULID），只能拿学到的 id resume
+    sessionIdSemantics: 'opaque',
   };
 
   private readonly opts: CodexAdapterOptions;

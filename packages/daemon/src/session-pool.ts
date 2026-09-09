@@ -61,11 +61,14 @@ export class SessionPool implements SessionDriver {
       const adapter = this.opts.adapters[ref.agent];
       if (!adapter) throw new Error(`no adapter registered for agent: ${ref.agent}`);
       const model = this.opts.getModel?.(ref.sessionId, ref.agent);
-      // 有别名时用真实 id 启动（per-turn adapter 重启后 resume）
-      const realId = this.opts.resolveSessionId?.(ref.sessionId, ref.agent) ?? ref.sessionId;
+      const alias = this.opts.resolveSessionId?.(ref.sessionId, ref.agent);
+      // opaque 语义（claude/codex）：有别名才 resume，否则传 undefined 让它新建，
+      // 首轮学完后 adapter 会改 handle.ref.sessionId，由 touch() 持久化别名
+      const startSessionId =
+        adapter.capabilities.sessionIdSemantics === 'opaque' ? alias : (alias ?? ref.sessionId);
       const handle = await adapter.start({
         cwd: ref.cwd,
-        sessionId: realId,
+        ...(startSessionId ? { sessionId: startSessionId } : {}),
         ...(model ? { model } : {}),
       });
       entry = {

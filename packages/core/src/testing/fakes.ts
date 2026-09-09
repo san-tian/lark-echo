@@ -92,6 +92,7 @@ export class FakeAdapter implements AgentAdapter {
     liveAttach: 'lease',
     approvals: false,
     modelSwitch: 'restart',
+    sessionIdSemantics: 'logical',
   };
   readonly received: UserMessage[] = [];
   readonly aborted: string[] = [];

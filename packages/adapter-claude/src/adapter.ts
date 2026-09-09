@@ -162,6 +162,8 @@ export class ClaudeAdapter implements AgentAdapter {
     approvals: false,
     // 只有 `--model` 启动参数，没有运行时切换；下一次 start 生效
     modelSwitch: 'restart',
+    // claude 自己生成 UUID 会话 id，只能拿学到的 id resume
+    sessionIdSemantics: 'opaque',
   };
 
   private readonly opts: ClaudeAdapterOptions;
@@ -388,10 +390,12 @@ export class ClaudeAdapter implements AgentAdapter {
       // （因为我们用 --session-id 钉过，正常情况下 sid === ref.sessionId）
       session.claudeSessionId = sid;
       if (sid !== session.ref.sessionId) {
-        this.logger.warn('claude used a different session id than requested', {
+        // 回传给 daemon：真实 id 变了，SessionPool 会把它持久化到 session_aliases
+        this.logger.info('claude session id differs from requested', {
           requested: session.ref.sessionId,
           actual: sid,
         });
+        session.ref.sessionId = sid;
       }
       this.logger.info('learned claude session id', {
         sessionId: session.ref.sessionId,

@@ -116,6 +116,13 @@ export interface AgentCapabilities {
   approvals: boolean;
   /** 配置台据此决定模型下拉是否可用（§4.4.2） */
   modelSwitch: 'runtime' | 'restart' | 'none';
+  /**
+   * 会话 id 语义：
+   * - `logical`：adapter 能被指定任意 id（pi 的 `--session-id`）
+   * - `opaque`：CLI 自己生成真实 id（claude/codex），只能拿**之前学到的** id 来 resume；
+   *   否则由 daemon 传 undefined 让它新建，并在首轮学完后通过 handle.ref.sessionId 回传。
+   */
+  sessionIdSemantics: 'logical' | 'opaque';
 }
 
 export interface StartOptions {
