@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   ensureHome,
+  getSessionModel,
   insertBinding,
   deleteBinding,
   listBindings,
@@ -14,6 +15,8 @@ import {
   paths,
   revokeCredential,
   saveCredential,
+  setMirrorMode,
+  setSessionModel,
   type Binding,
   type DoctorCheck,
 } from '@lark-echo/core';
@@ -313,6 +316,141 @@ async function cmdUnbind(args: Args): Promise<number> {
   return 0;
 }
 
+/* ------------------------- 管理：绑定 / 镜像 / 模型 ------------------------- */
+
+interface SessionRow {
+  ref: { sessionId: string; agent: string; cwd: string };
+  idleMs: number;
+  model?: string;
+}
+
+async function cmdBindings(): Promise<number> {
+  const bindings = (await withIpc((c) => c.call<Binding[]>('bind.list'))) ?? listBindings(openDb());
+  if (bindings.length === 0) {
+    print('没有绑定。用 lark-echo bind 创建一个。');
+    return 0;
+  }
+  const sessions =
+    (await withIpc((c) => c.call<SessionRow[]>('session.list'))) ?? ([] as SessionRow[]);
+  const modelOf = new Map(sessions.map((s) => [s.ref.sessionId, s.model]));
+  const rows = bindings.map((b) => ({
+    chat: b.chatId,
+    session: b.sessionId,
+    agent: b.agent,
+    mirror: b.mirrorMode,
+    model: modelOf.get(b.sessionId) ?? '-',
+    owner: b.ownerOpenId,
+  }));
+  const widths = {
+    chat: Math.max(4, ...rows.map((r) => r.chat.length)),
+    session: Math.max(7, ...rows.map((r) => r.session.length)),
+    model: Math.max(5, ...rows.map((r) => r.model.length)),
+  };
+  print(
+    `${'CHAT'.padEnd(widths.chat)}  ${'SESSION'.padEnd(widths.session)}  AGENT  ${'MIRROR'.padEnd(14)}  ${'MODEL'.padEnd(widths.model)}  OWNER`,
+  );
+  for (const r of rows) {
+    print(
+      `${r.chat.padEnd(widths.chat)}  ${r.session.padEnd(widths.session)}  ${r.agent.padEnd(5)}  ${r.mirror.padEnd(14)}  ${r.model.padEnd(widths.model)}  ${r.owner}`,
+    );
+  }
+  return 0;
+}
+
+const MIRROR_MODES = ['off', 'user', 'user+assistant', 'full'];
+
+async function cmdMirror(args: Args): Promise<number> {
+  const chatId = args.positional[1];
+  const mode = args.positional[2];
+  if (!chatId || !mode || !MIRROR_MODES.includes(mode)) {
+    print(`用法: lark-echo mirror <chat_id> <${MIRROR_MODES.join('|')}>`);
+    return 1;
+  }
+  const res = await withIpc((c) => c.call<{ updated: boolean }>('mirror.set', { chatId, mode }));
+  const updated = res?.updated ?? setMirrorMode(openDb(), chatId, mode as never);
+  ok(updated ? `${chatId} mirror = ${mode}` : `${chatId} 没有绑定`);
+  return updated ? 0 : 1;
+}
+
+async function cmdModel(args: Args): Promise<number> {
+  const sessionId = args.positional[1];
+  const model = args.positional[2];
+  if (!sessionId) {
+    print('用法: lark-echo model <session_id> [<provider>/<model>]');
+    return 1;
+  }
+  if (!model) {
+    const current = getSessionModel(openDb(), sessionId);
+    print(`${sessionId}: ${current ?? '(agent 默认模型)'}`);
+    return 0;
+  }
+  const res = await withIpc((c) =>
+    c.call<{ model?: string; applied: string }>('session.setModel', { sessionId, model }),
+  );
+  if (!res) {
+    setSessionModel(openDb(), sessionId, model);
+    ok(`已记录 ${sessionId} → ${model}（daemon 未运行，下次启动生效）`);
+    return 0;
+  }
+  ok(
+    res.applied === 'runtime'
+      ? `${sessionId} 已切换到 ${model}（立即生效）`
+      : `${sessionId} 已记录 ${model}（下次启动该会话生效）`,
+  );
+  return 0;
+}
+
+async function cmdModels(args: Args): Promise<number> {
+  const sessionId = args.positional[1];
+  if (!sessionId) {
+    print('用法: lark-echo models <session_id>');
+    return 1;
+  }
+  const res = await withIpc((c) =>
+    c.call<{ models?: { id: string; label?: string; provider?: string }[]; running: boolean }>(
+      'session.models',
+      { sessionId },
+    ),
+  );
+  if (!res) {
+    fail('daemon 未运行，无法列出模型');
+    return 1;
+  }
+  if (!res.running) {
+    fail(`会话 ${sessionId} 未运行（先在群里发一条消息让它启动，再查）`);
+    return 1;
+  }
+  for (const m of res.models ?? []) {
+    print(`${m.provider ? `${m.provider}/` : ''}${m.id}${m.label ? `  ${m.label}` : ''}`);
+  }
+  if (!res.models?.length) print('（adapter 未提供模型列表）');
+  return 0;
+}
+
+async function cmdSessions(args: Args): Promise<number> {
+  const release = flag(args, 'release');
+  if (release) {
+    await withIpc((c) => c.call('session.release', { sessionId: release }));
+    ok(`已释放 ${release}`);
+    return 0;
+  }
+  const sessions = await withIpc((c) => c.call<SessionRow[]>('session.list'));
+  if (!sessions) {
+    fail('daemon 未运行');
+    return 1;
+  }
+  if (sessions.length === 0) {
+    print('没有运行中的会话');
+    return 0;
+  }
+  for (const s of sessions) {
+    print(
+      `${s.ref.sessionId}  [${s.ref.agent}]  idle=${Math.round(s.idleMs / 1000)}s  model=${s.model ?? '-'}\n    cwd: ${s.ref.cwd}`,
+    );
+  }
+  return 0;
+}
+
 /* --------------------------------- chats --------------------------------- */
 
 async function cmdChats(): Promise<number> {
@@ -360,6 +498,11 @@ function usage(): void {
   lark-echo chats                         列出机器人所在的群
   lark-echo bind [--session <id>] [--cwd <dir>] [--owner <open_id>|--anyone] [--chat <chat_id>]
   lark-echo unbind <chat_id>
+  lark-echo bindings                      绑定总览（含模型与镜像档位）
+  lark-echo mirror <chat_id> <off|user|user+assistant|full>
+  lark-echo model <session_id> [<provider>/<model>]  查看/设置模型
+  lark-echo models <session_id>           列出可切换的模型（需会话在运行）
+  lark-echo sessions [--release <session_id>]
   lark-echo status
 
 环境变量:
@@ -386,6 +529,16 @@ async function main(): Promise<number> {
       return cmdUnbind(args);
     case 'chats':
       return cmdChats();
+    case 'bindings':
+      return cmdBindings();
+    case 'mirror':
+      return cmdMirror(args);
+    case 'model':
+      return cmdModel(args);
+    case 'models':
+      return cmdModels(args);
+    case 'sessions':
+      return cmdSessions(args);
     case 'status':
       return cmdStatus();
     case undefined:

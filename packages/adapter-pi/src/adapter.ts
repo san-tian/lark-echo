@@ -6,6 +6,7 @@ import {
   type AgentSessionHandle,
   type HistoryEntry,
   type Logger,
+  type ModelInfo,
   type SessionRef,
   type StartOptions,
   type TurnEvent,
@@ -82,7 +83,8 @@ export class PiAdapter implements AgentAdapter {
     steer: true,
     liveAttach: 'in-proc',
     approvals: false,
-    modelSwitch: 'restart',
+    // pi RPC 支持 set_model，可运行时切换（不用重启进程）
+    modelSwitch: 'runtime',
   };
 
   private readonly opts: PiAdapterOptions;
@@ -212,8 +214,7 @@ export class PiAdapter implements AgentAdapter {
     this.logger.info('pi session stopped', { sessionId: session.ref.sessionId });
   }
 
-  async *history(handle: AgentSessionHandle, cursor?: string): AsyncIterable<HistoryEntry> {
-    const session = this.requireSession(handle);
+  async *history(handle: AgentSessionHandle, cursor?: string): AsyncIterable<HistoryEntry> {    const session = this.requireSession(handle);
     const data = (await session.client.request(
       'get_entries',
       cursor ? { since: cursor } : {},
@@ -230,6 +231,46 @@ export class PiAdapter implements AgentAdapter {
         ...(entry.timestamp ? { ts: Date.parse(String(entry.timestamp)) } : {}),
       };
     }
+  }
+
+  /** pi 的 `get_available_models` */
+  async models(handle: AgentSessionHandle): Promise<ModelInfo[]> {
+    const session = this.requireSession(handle);
+    const data = (await session.client.request('get_available_models')) as {
+      models?: Array<{ id?: string; name?: string; provider?: string }>;
+    };
+    return (data?.models ?? []).flatMap((m) =>
+      m.id
+        ? [
+            {
+              id: m.id,
+              ...(m.name ? { label: m.name } : {}),
+              ...(m.provider ? { provider: m.provider } : {}),
+            },
+          ]
+        : [],
+    );
+  }
+
+  /** pi 的 `set_model`；`model` 支持 `<provider>/<modelId>`，只给 modelId 时自动找 provider */
+  async setModel(handle: AgentSessionHandle, model: string): Promise<void> {
+    const session = this.requireSession(handle);
+    let provider: string | undefined;
+    let modelId = model;
+    const slash = model.indexOf('/');
+    if (slash > 0) {
+      provider = model.slice(0, slash);
+      modelId = model.slice(slash + 1);
+    }
+    if (!provider) {
+      const found = (await this.models(handle)).find((m) => m.id === modelId);
+      provider = found?.provider;
+    }
+    if (!provider) {
+      throw new Error(`找不到模型 "${model}" 的 provider，请用 <provider>/<modelId> 形式`);
+    }
+    await session.client.request('set_model', { provider, modelId });
+    this.logger.info('model switched', { sessionId: session.ref.sessionId, provider, modelId });
   }
 
   private onEvent(session: PiSession, active: ActiveTurn, event: PiEvent): void {

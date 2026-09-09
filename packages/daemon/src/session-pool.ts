@@ -12,6 +12,8 @@ export interface SessionPoolOptions {
   adapters: Partial<Record<AgentId, AgentAdapter>>;
   /** idle 回收阈值（§11.4，默认 30 分钟） */
   idleMs?: number;
+  /** 启动会话时使用的模型（`<provider>/<modelId>`），来自 session_settings */
+  getModel?: (sessionId: string) => string | undefined;
   logger?: Logger;
   now?: () => number;
 }
@@ -35,7 +37,8 @@ export interface SessionInfo {
  */
 export class SessionPool implements SessionDriver {
   private readonly entries = new Map<string, PoolEntry>();
-  private readonly opts: Required<Omit<SessionPoolOptions, 'logger'>> & { logger: Logger };
+  private readonly opts: Required<Omit<SessionPoolOptions, 'logger' | 'getModel'>> &
+    Pick<SessionPoolOptions, 'getModel'> & { logger: Logger };
   private sweeper?: NodeJS.Timeout;
 
   constructor(opts: SessionPoolOptions) {
@@ -43,6 +46,7 @@ export class SessionPool implements SessionDriver {
       adapters: opts.adapters,
       idleMs: opts.idleMs ?? 30 * 60 * 1000,
       now: opts.now ?? (() => Date.now()),
+      getModel: opts.getModel,
       logger: opts.logger ?? createLogger({ svc: 'session-pool' }),
     };
   }
@@ -52,7 +56,12 @@ export class SessionPool implements SessionDriver {
     if (!entry) {
       const adapter = this.opts.adapters[ref.agent];
       if (!adapter) throw new Error(`no adapter registered for agent: ${ref.agent}`);
-      const handle = await adapter.start({ cwd: ref.cwd, sessionId: ref.sessionId });
+      const model = this.opts.getModel?.(ref.sessionId);
+      const handle = await adapter.start({
+        cwd: ref.cwd,
+        sessionId: ref.sessionId,
+        ...(model ? { model } : {}),
+      });
       entry = {
         ref,
         adapter,
@@ -69,6 +78,12 @@ export class SessionPool implements SessionDriver {
     }
     entry.lastUsedAt = this.opts.now();
     return { adapter: entry.adapter, handle: entry.handle };
+  }
+
+  /** 当前在池中的会话句柄（模型切换用） */
+  get(sessionId: string): { adapter: AgentAdapter; handle: AgentSessionHandle } | undefined {
+    const entry = this.entries.get(sessionId);
+    return entry ? { adapter: entry.adapter, handle: entry.handle } : undefined;
   }
 
   touch(ref: SessionRef): void {

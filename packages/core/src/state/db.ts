@@ -56,6 +56,12 @@ CREATE TABLE IF NOT EXISTS outbound_messages (
   UNIQUE(turn_id, seq)                     -- 出站幂等（缺口 B）
 );
 CREATE INDEX IF NOT EXISTS idx_outbound_pending ON outbound_messages(status, created_at);
+
+CREATE TABLE IF NOT EXISTS session_settings (
+  session_id TEXT PRIMARY KEY,
+  model      TEXT,                          -- <provider>/<modelId>，为空表示用 agent 自己的默认值
+  updated_at INTEGER NOT NULL
+);
 `;
 
 export type Db = DatabaseSync;

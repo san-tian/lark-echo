@@ -13,3 +13,4 @@ export * from './state/db.ts';
 export * from './state/bindings.ts';
 export * from './state/inbound.ts';
 export * from './state/outbound.ts';
+export * from './state/settings.ts';

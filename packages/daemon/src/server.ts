@@ -13,6 +13,9 @@ import {
   SessionQueue,
   Dispatcher,
   countPendingInbound,
+  getSessionModel,
+  setSessionModel,
+  listSessionSettings,
   type AgentAdapter,
   type AgentId,
   type Binding,
@@ -44,6 +47,7 @@ export interface DaemonStatus {
   sessions: number;
   pendingInbound: number;
   queueBySession: Record<string, number>;
+  sessionModels: Record<string, string | undefined>;
 }
 
 /**
@@ -74,6 +78,7 @@ export class Daemon {
     this.pool = new SessionPool({
       adapters: opts.adapters,
       logger: this.logger,
+      getModel: (sessionId) => getSessionModel(this.db, sessionId),
       ...(opts.idleMs ? { idleMs: opts.idleMs } : {}),
     });
     this.dispatcher = new Dispatcher({
@@ -119,13 +124,18 @@ export class Daemon {
     const bindings = listBindings(this.db);
     const sessions = this.pool.list();
     const queueBySession: Record<string, number> = {};
-    for (const s of sessions) queueBySession[s.ref.sessionId] = this.queue.pendingCount(s.ref.sessionId);
+    const sessionModels: Record<string, string | undefined> = {};
+    for (const s of sessions) {
+      queueBySession[s.ref.sessionId] = this.queue.pendingCount(s.ref.sessionId);
+      sessionModels[s.ref.sessionId] = getSessionModel(this.db, s.ref.sessionId);
+    }
     return {
       channel: this.channel.id,
       bindings: bindings.length,
       sessions: sessions.length,
       pendingInbound: countPendingInbound(this.db),
       queueBySession,
+      sessionModels,
     };
   }
 
@@ -154,10 +164,14 @@ export class Daemon {
           ),
         };
       case 'session.list':
-        return this.pool.list();
+        return this.pool.list().map((s) => ({ ...s, model: getSessionModel(this.db, s.ref.sessionId) }));
       case 'session.release':
         await this.pool.release(String(params.sessionId));
         return { released: true };
+      case 'session.setModel':
+        return this.setModel(String(params.sessionId), params.model ? String(params.model) : undefined);
+      case 'session.models':
+        return this.listModels(String(params.sessionId));
       case 'doctor':
         return { checks: await this.channel.doctor() };
       case 'channel.chats':
@@ -172,6 +186,31 @@ export class Daemon {
       default:
         throw new Error(`unknown method: ${method}`);
     }
+  }
+
+  /** 模型：先落盘，会话在运行且 adapter 支持运行时切换就立即生效（§4.4.2） */
+  private async setModel(
+    sessionId: string,
+    model: string | undefined,
+  ): Promise<{ model?: string; applied: 'runtime' | 'next-start' }> {
+    setSessionModel(this.db, sessionId, model);
+    const live = this.pool.get(sessionId);
+    if (!model) return { applied: 'next-start' };
+    if (!live) return { model, applied: 'next-start' };
+    const { adapter, handle } = live;
+    if (adapter.capabilities.modelSwitch !== 'runtime' || !adapter.setModel) {
+      return { model, applied: 'next-start' };
+    }
+    await adapter.setModel(handle, model);
+    return { model, applied: 'runtime' };
+  }
+
+  private async listModels(
+    sessionId: string,
+  ): Promise<{ models?: unknown[]; running: boolean }> {
+    const live = this.pool.get(sessionId);
+    if (!live?.adapter.models) return { running: Boolean(live) };
+    return { models: await live.adapter.models(live.handle), running: true };
   }
 
   private bindAdd(params: IpcParams): Binding {

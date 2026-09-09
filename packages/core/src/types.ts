@@ -89,6 +89,7 @@ export interface BindCode {
 export interface ModelInfo {
   id: string;
   label?: string;
+  provider?: string;
 }
 
 /** 注入到 agent 的只读上下文（pendingWindow / bootstrapHistory） */
@@ -158,5 +159,8 @@ export interface AgentAdapter {
   stop(handle: AgentSessionHandle): Promise<void>;
   history?(handle: AgentSessionHandle, cursor?: string): AsyncIterable<HistoryEntry>;
   injectContext?(handle: AgentSessionHandle, ctx: ContextBlock): Promise<void>;
-  models?(): Promise<ModelInfo[]>;
+  /** 列出可切换的模型（需要运行中的会话；探测不到就返回空） */
+  models?(handle: AgentSessionHandle): Promise<ModelInfo[]>;
+  /** 仅 `modelSwitch === 'runtime'` 时实现；`model` 支持 `<provider>/<modelId>` */
+  setModel?(handle: AgentSessionHandle, model: string): Promise<void>;
 }
