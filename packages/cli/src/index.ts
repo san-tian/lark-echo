@@ -504,26 +504,25 @@ async function cmdUi(args: Args): Promise<number> {
     return 0;
   }
 
+  // 默认绑 tailnet 地址（如果有），否则 loopback。--host 可显式覆盖。
   const allowHosts: string[] = [];
-  let host = flag(args, 'host') ?? '127.0.0.1';
-  if (args.flags.tailscale) {
+  let host = flag(args, 'host');
+  if (!host) {
     const ts = tailscaleInfo();
-    if (!ts.ip) {
-      fail('拿不到 tailscale 地址，确认 tailscale 已启动');
-      return 1;
+    if (ts.ip) {
+      host = ts.ip;
+      allowHosts.push(ts.ip);
+      if (ts.dnsName) allowHosts.push(ts.dnsName);
+    } else {
+      host = '127.0.0.1';
     }
-    host = ts.ip;
-    allowHosts.push(ts.ip);
-    if (ts.dnsName) allowHosts.push(ts.dnsName);
-  }
-  const loopback = LOOPBACK_HOSTS.has(host);
-  const useAuth = !args.flags['no-auth'] && !loopback;
-  if (!loopback && !useAuth) {
-    print('⚠ 绑非本机地址且未开启鉴权：tailnet/局域网内任何能访问该端口的人都能操作这个控制台');
-    print('  （可以绑定群聊到一条能执行 shell 的 agent 会话，建议加回 token）');
+  } else if (!LOOPBACK_HOSTS.has(host)) {
+    allowHosts.push(host);
   }
 
-  const token = useAuth ? randomBytes(24).toString('hex') : undefined;
+  // 默认不鉴权（决策 20）；要鉴权加 --auth
+  const auth = Boolean(args.flags.auth);
+  const token = auth ? randomBytes(24).toString('hex') : undefined;
   ensureHome();
   if (token) writeSecretFile(paths.uiToken(), token);
   const port = flag(args, 'port') ? Number(flag(args, 'port')) : 0;
@@ -540,7 +539,7 @@ async function cmdUi(args: Args): Promise<number> {
     return 1;
   }
   ok(`配置台已启动: ${res.url}`);
-  print(`  监听 ${host} · ${useAuth ? '需要 token' : '无鉴权'} · 30 分钟无操作自动关闭`);
+  print(`  监听 ${host} · ${auth ? '需要 token' : '无鉴权（加 --auth 可开）'} · lark-echo ui --stop 关闭`);
   if (!args.flags['no-open']) {
     spawn('xdg-open', [res.url], { stdio: 'ignore', detached: true }).unref();
   }
@@ -582,7 +581,7 @@ function usage(): void {
   lark-echo model <session_id> [<provider>/<model>]  查看/设置模型
   lark-echo models <session_id>           列出可切换的模型（需会话在运行）
   lark-echo sessions [--release <session_id>]
-  lark-echo ui [--host <addr>] [--tailscale] [--port N] [--no-auth] [--no-open] [--stop]
+  lark-echo ui [--host <addr>] [--port N] [--auth] [--no-open] [--stop]
   lark-echo status
 
 环境变量:

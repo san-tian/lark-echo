@@ -18,7 +18,6 @@ async function startServer(overrides: { token?: string; allowHosts?: string[] } 
     ...('token' in overrides ? (overrides.token ? { token: overrides.token } : {}) : { token: TOKEN }),
     ...(overrides.allowHosts ? { allowHosts: overrides.allowHosts } : {}),
     port: 0,
-    idleMs: 60_000,
   });
   const { url, port } = await server.start();
   return { server, url, port, base: `http://127.0.0.1:${port}` };

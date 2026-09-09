@@ -65,13 +65,16 @@ npm run typecheck
 
 ## 快速开始
 
+**推荐：把 [`SETUP.md`](./SETUP.md) 里的提示词复制给你的 agent**，它会带你做完 —— 你只需做 3 件必须由人做的事（建飞书应用、拉机器人进群、输一次 secret）。
+
+手动版：
+
 ```bash
 npm install
 npx lark-echo connect <app_id>   # 粘贴 app secret（TTY 静默输入）
 npx lark-echo doctor             # 体检：凭据 / 权限 / 长连接
 npx lark-echo daemon start
-npx lark-echo chats              # 列出机器人所在的群
-npx lark-echo bind --owner <你的 open_id>
+npx lark-echo ui                 # 控制台：选群 / 目录 / 会话 / 模型，点绑定
 ```
 
 绑定后，在群里 @机器人 即可对话。

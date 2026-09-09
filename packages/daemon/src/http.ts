@@ -17,7 +17,6 @@ export interface UiServerOptions {
   /** 额外的合法 Host（如 tailnet 的 MagicDNS 名） */
   allowHosts?: string[];
   port?: number;
-  idleMs?: number;
   logger?: Logger;
 }
 
@@ -36,7 +35,7 @@ const LOOPBACK = new Set(['127.0.0.1', 'localhost', '::1', '[::1]']);
  * - `--host` 可绑 tailnet 地址；Host 头白名单 = loopback + 绑定地址 + 额外白名单（防 DNS rebinding）
  * - 绑非 loopback 时默认要求能力 token；显式 `--no-auth` 才关（会打印警告）
  * - 写操作一律要 CSRF + Origin 校验，与是否鉴权无关
- * - 空闲自动关端口
+ * - 不自动关闭：显式 `lark-echo ui --stop` 或 daemon 停止才关（决策 20）
  */
 export class UiServer {
   private readonly opts: UiServerOptions;
@@ -44,7 +43,6 @@ export class UiServer {
   private readonly sessions = new Map<string, UiSession>();
   private readonly allowHosts: Set<string>;
   private server?: Server;
-  private idleTimer?: NodeJS.Timeout;
   private port = 0;
 
   constructor(opts: UiServerOptions) {
@@ -70,14 +68,11 @@ export class UiServer {
       this.server!.listen(this.opts.port ?? 0, host, () => resolve());
     });
     this.port = (this.server.address() as AddressInfo).port;
-    this.touch();
     this.logger.info('ui listening', { host, port: this.port, auth: Boolean(this.opts.token) });
     return { url: this.url(), port: this.port, host };
   }
 
   async close(): Promise<void> {
-    if (this.idleTimer) clearTimeout(this.idleTimer);
-    this.idleTimer = undefined;
     const server = this.server;
     this.server = undefined;
     this.sessions.clear();
@@ -94,16 +89,6 @@ export class UiServer {
     const host = this.opts.host ?? '127.0.0.1';
     const base = `http://${host}:${this.port}/`;
     return this.opts.token ? `${base}?t=${this.opts.token}` : base;
-  }
-
-  private touch(): void {
-    if (this.idleTimer) clearTimeout(this.idleTimer);
-    const idleMs = this.opts.idleMs ?? 30 * 60 * 1000;
-    this.idleTimer = setTimeout(() => {
-      this.logger.info('ui idle timeout, closing');
-      void this.close();
-    }, idleMs);
-    this.idleTimer.unref?.();
   }
 
   private async handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -138,7 +123,6 @@ export class UiServer {
     }
 
     session.lastSeen = Date.now();
-    this.touch();
 
     if (url.pathname === '/') {
       return this.html(res, renderPage({ csrf: session.csrf, nonce }), nonce);

@@ -99,11 +99,12 @@ export async function* readTranscript(file: string, cursor?: string): AsyncItera
       } catch {
         continue; // 转录里偶有非 JSON 行，跳过
       }
-      const entry = toHistoryEntry(raw);
       if (!pastCursor) {
-        if (entry && entry.id === cursor) pastCursor = true;
+        // 游标比较用原始 uuid：游标条目本身可能是被过滤掉的条目
+        if ((raw as TranscriptRaw).uuid === cursor) pastCursor = true;
         continue;
       }
+      const entry = toHistoryEntry(raw);
       if (entry) yield entry;
     }
   } finally {
