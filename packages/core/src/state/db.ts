@@ -62,6 +62,12 @@ CREATE TABLE IF NOT EXISTS session_settings (
   model      TEXT,                          -- <provider>/<modelId>，为空表示用 agent 自己的默认值
   updated_at INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS settings (
+  key        TEXT PRIMARY KEY,              -- 目前用 'default_model'
+  value      TEXT,
+  updated_at INTEGER NOT NULL
+);
 `;
 
 export type Db = DatabaseSync;

@@ -20,6 +20,11 @@ export interface DoctorCheck {
   detail?: string;
 }
 
+export interface ChatMember {
+  id: string;
+  name: string;
+}
+
 /**
  * 渠道适配层契约。飞书是第一个实现（packages/channel-feishu），
  * 后续 Slack/企微沿用同一形状。
@@ -39,6 +44,8 @@ export interface Channel {
   receipt(conversationKey: ConversationKey, kind: ReceiptKind, opts?: ReceiptOptions): Promise<void>;
   /** 机器人所在的群，供 `/feishu-bind` 面板使用 */
   listChats(): Promise<ChatInfo[]>;
+  /** 群成员（open_id + 名字），供「仅我」选择器使用（决策 19） */
+  listMembers?(chatId: string): Promise<ChatMember[]>;
   doctor(): Promise<DoctorCheck[]>;
 }
 

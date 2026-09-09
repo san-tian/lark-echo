@@ -3,6 +3,7 @@ import {
   splitText,
   type Channel,
   type ChatInfo,
+  type ChatMember,
   type ConversationKey,
   type DoctorCheck,
   type InboundMessage,
@@ -193,6 +194,25 @@ export class FeishuChannel implements Channel {
     } catch (err) {
       this.logger.debug('clear reaction failed', { messageId, error: String(err) });
     }
+  }
+
+  /** 群成员（供控制台「仅我」选择器用，决策 19） */
+  async listMembers(chatId: string): Promise<ChatMember[]> {
+    const res = (await this.client.request({
+      method: 'GET',
+      url: `/open-apis/im/v1/chats/${chatId}/members`,
+      params: { member_id_type: 'open_id', page_size: 100 },
+    })) as {
+      code?: number;
+      msg?: string;
+      data?: { items?: Array<{ member_id?: string; name?: string }> };
+    };
+    if (res.code !== undefined && res.code !== 0) {
+      throw new Error(`feishu members failed: code=${res.code} msg=${res.msg ?? ''}`);
+    }
+    return (res.data?.items ?? []).flatMap((m) =>
+      m.member_id ? [{ id: m.member_id, name: m.name ?? m.member_id }] : [],
+    );
   }
 
   async listChats(): Promise<ChatInfo[]> {

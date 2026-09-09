@@ -136,7 +136,7 @@ test('GET 不能触发写操作', async () => {
   const { server, base } = await startServer();
   const { cookie } = await login(base);
   const res = await fetch(base + '/api/bind', { headers: { cookie } });
-  assert.equal(res.status, 405);
+  assert.ok([404, 405].includes(res.status), `期望 404/405，实际 ${res.status}`);
   await server.close();
 });
 

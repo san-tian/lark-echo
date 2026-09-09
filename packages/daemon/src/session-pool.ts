@@ -12,8 +12,8 @@ export interface SessionPoolOptions {
   adapters: Partial<Record<AgentId, AgentAdapter>>;
   /** idle 回收阈值（§11.4，默认 30 分钟） */
   idleMs?: number;
-  /** 启动会话时使用的模型（`<provider>/<modelId>`），来自 session_settings */
-  getModel?: (sessionId: string) => string | undefined;
+  /** 启动会话时使用的模型（`<provider>/<modelId>`），来自 session_settings / 默认模型 */
+  getModel?: (sessionId: string, agent: AgentId) => string | undefined;
   logger?: Logger;
   now?: () => number;
 }
@@ -56,7 +56,7 @@ export class SessionPool implements SessionDriver {
     if (!entry) {
       const adapter = this.opts.adapters[ref.agent];
       if (!adapter) throw new Error(`no adapter registered for agent: ${ref.agent}`);
-      const model = this.opts.getModel?.(ref.sessionId);
+      const model = this.opts.getModel?.(ref.sessionId, ref.agent);
       const handle = await adapter.start({
         cwd: ref.cwd,
         sessionId: ref.sessionId,
@@ -84,6 +84,11 @@ export class SessionPool implements SessionDriver {
   get(sessionId: string): { adapter: AgentAdapter; handle: AgentSessionHandle } | undefined {
     const entry = this.entries.get(sessionId);
     return entry ? { adapter: entry.adapter, handle: entry.handle } : undefined;
+  }
+
+  /** 按 agent 取 adapter（控制台列模型用，不需要会话已启动） */
+  adapterFor(agent: AgentId): AgentAdapter | undefined {
+    return this.opts.adapters[agent];
   }
 
   touch(ref: SessionRef): void {

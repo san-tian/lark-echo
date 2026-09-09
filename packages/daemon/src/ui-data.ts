@@ -1,26 +1,44 @@
 import {
   BindError,
+  defaultModelKey,
   deleteBindCode,
   deleteBinding,
   discardOutbound,
   getSessionModel,
+  getSetting,
   insertBinding,
   issueBindCode,
   listBindCodes,
   listBindings,
   listPendingOutbound,
   newBindCode,
+  setSetting,
   setSessionModel,
   type AgentId,
   type Binding,
   type Channel,
+  type ChatMember,
   type Db,
   type DoctorCheck,
   type Logger,
   type MirrorMode,
   type ModelInfo,
 } from '@lark-echo/core';
+import { readdir, stat } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
 import type { SessionPool } from './session-pool.ts';
+
+export interface UiDirListing {
+  path: string;
+  parent?: string;
+  dirs: { name: string; path: string }[];
+}
+
+export interface UiSessionOption {
+  sessionId: string;
+  mtime: number;
+}
 
 export interface UiChat {
   chatId: string;
@@ -46,6 +64,8 @@ export interface UiState {
   codes: { code: string; sessionId: string; expiresAt: number }[];
   chats: UiChat[];
   models: Record<string, ModelInfo[]>;
+  defaultModels: Partial<Record<AgentId, string>>;
+  recentCwds: string[];
   queue: {
     pendingInbound: number;
     pendingOutbound: { id: number; chatId: string; text: string; attempts: number; createdAt: number }[];
@@ -114,6 +134,12 @@ export class UiData {
       })),
       chats,
       models,
+      defaultModels: {
+        pi: getSetting(this.deps.db, defaultModelKey('pi')),
+        claude: getSetting(this.deps.db, defaultModelKey('claude')),
+        codex: getSetting(this.deps.db, defaultModelKey('codex')),
+      },
+      recentCwds: [...new Set(bindings.map((b) => b.cwd))],
       queue: {
         pendingInbound: this.deps.pendingInbound(),
         pendingOutbound: listPendingOutbound(this.deps.db, 50).map((m) => ({
@@ -196,6 +222,16 @@ export class UiData {
         return { checks: await this.refreshDoctor() };
       case '/api/chats/refresh':
         return { chats: await this.refreshChats() };
+      case '/api/default-model': {
+        const agent = String(body.agent ?? 'pi') as AgentId;
+        setSetting(
+          this.deps.db,
+          defaultModelKey(agent),
+          body.model ? String(body.model) : undefined,
+        );
+        log.info('default model set', { agent, model: body.model ?? null });
+        return { agent, model: body.model ?? null };
+      }
       default:
         throw new Error(`unknown action: ${method} ${path}`);
     }
@@ -236,4 +272,68 @@ export class UiData {
       return [];
     }
   }
+
+  /** 某 agent 的可选模型（不需要会话在运行，adapter 自行探测） */
+  async listModels(agent: AgentId): Promise<ModelInfo[]> {
+    const adapter = this.deps.pool.adapterFor(agent);
+    if (!adapter?.models) return [];
+    try {
+      return await adapter.models();
+    } catch {
+      return [];
+    }
+  }
+
+  /** 目录选择器：限制在 $HOME 内，避免任意路径浏览 */
+  async listDirs(input?: string): Promise<UiDirListing> {
+    const home = homedir();
+    let path = input?.trim() ? resolve(input) : home;
+    if (path !== home && !path.startsWith(home + '/')) path = home;
+    const entries = await readdir(path, { withFileTypes: true }).catch(() => []);
+    const dirs = entries
+      .filter((e) => e.isDirectory())
+      .map((e) => ({ name: e.name, path: join(path, e.name) }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    return {
+      path,
+      ...(path === home ? {} : { parent: dirname(path) }),
+      dirs,
+    };
+  }
+
+  /** 某目录下已有的 agent 会话，供会话选择器使用 */
+  async listSessions(agent: AgentId, cwd: string): Promise<UiSessionOption[]> {
+    const dir = sessionDirFor(agent, cwd);
+    if (!dir) return [];
+    const entries = await readdir(dir).catch(() => []);
+    const out: UiSessionOption[] = [];
+    for (const name of entries) {
+      if (!name.endsWith('.jsonl')) continue;
+      const sessionId = sessionIdFromFile(agent, name);
+      if (!sessionId) continue;
+      const info = await stat(join(dir, name)).catch(() => undefined);
+      out.push({ sessionId, mtime: info?.mtimeMs ?? 0 });
+    }
+    return out.sort((a, b) => b.mtime - a.mtime).slice(0, 50);
+  }
+
+  async listMembers(chatId: string): Promise<ChatMember[]> {
+    if (!this.deps.channel.listMembers) return [];
+    return this.deps.channel.listMembers(chatId).catch(() => []);
+  }
+}
+
+function sessionDirFor(agent: AgentId, cwd: string): string | undefined {
+  if (agent === 'pi') {
+    const slug = `--${cwd.replace(/^\//, '').replace(/\//g, '-')}--`;
+    return join(homedir(), '.pi', 'agent', 'sessions', slug);
+  }
+  if (agent === 'claude') return join(homedir(), '.claude', 'projects', cwd.replace(/\//g, '-'));
+  return undefined; // codex 的 rollout 按日期分目录，暂不列举
+}
+
+function sessionIdFromFile(agent: AgentId, name: string): string | undefined {
+  if (agent === 'pi') return /_([^_]+)\.jsonl$/.exec(name)?.[1];
+  if (agent === 'claude') return /^(.+)\.jsonl$/.exec(name)?.[1];
+  return undefined;
 }

@@ -42,3 +42,36 @@ export function listSessionSettings(db: Db): SessionSettings[] {
     db.prepare('SELECT * FROM session_settings ORDER BY updated_at DESC').all(),
   ).map(toSettings);
 }
+
+/* ------------------------------ 全局配置 ------------------------------ */
+
+export const DEFAULT_MODEL_KEY = 'default_model';
+
+/** 默认模型按 agent 分开存（pi / claude / codex 的模型 id 不通用） */
+export const defaultModelKey = (agent: string): string => `default_model:${agent}`;
+
+interface GlobalRow {
+  key: string;
+  value: string | null;
+  updated_at: number;
+}
+
+export function getSetting(db: Db, key: string): string | undefined {
+  const row = asRow<GlobalRow>(db.prepare('SELECT * FROM settings WHERE key = ?').get(key));
+  return row?.value ?? undefined;
+}
+
+export function setSetting(db: Db, key: string, value: string | undefined, now = Date.now()): void {
+  db.prepare(
+    `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+  ).run(key, value ?? null, now);
+}
+
+export function listSettings(db: Db): Record<string, string | undefined> {
+  const out: Record<string, string | undefined> = {};
+  for (const row of asRows<GlobalRow>(db.prepare('SELECT * FROM settings').all())) {
+    out[row.key] = row.value ?? undefined;
+  }
+  return out;
+}

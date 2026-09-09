@@ -144,8 +144,28 @@ export class UiServer {
       return this.html(res, renderPage({ csrf: session.csrf, nonce }), nonce);
     }
 
-    if (url.pathname === '/api/state' && req.method === 'GET') {
-      return this.json(res, 200, await this.opts.data.state());
+    if (url.pathname.startsWith('/api/') && req.method === 'GET') {
+      const data = this.opts.data;
+      if (url.pathname === '/api/state') return this.json(res, 200, await data.state());
+      if (url.pathname === '/api/fs') {
+        return this.json(res, 200, await data.listDirs(url.searchParams.get('path') ?? undefined));
+      }
+      if (url.pathname === '/api/sessions') {
+        const agent = (url.searchParams.get('agent') ?? 'pi') as 'pi' | 'claude' | 'codex';
+        return this.json(
+          res,
+          200,
+          await data.listSessions(agent, url.searchParams.get('cwd') ?? ''),
+        );
+      }
+      if (url.pathname === '/api/models') {
+        const agent = (url.searchParams.get('agent') ?? 'pi') as 'pi' | 'claude' | 'codex';
+        return this.json(res, 200, await data.listModels(agent));
+      }
+      if (url.pathname === '/api/members') {
+        return this.json(res, 200, await data.listMembers(url.searchParams.get('chatId') ?? ''));
+      }
+      return this.json(res, 404, { error: 'not found' });
     }
 
     if (url.pathname.startsWith('/api/')) {

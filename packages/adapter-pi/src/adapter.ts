@@ -90,6 +90,7 @@ export class PiAdapter implements AgentAdapter {
   private readonly opts: PiAdapterOptions;
   private readonly logger: Logger;
   private readonly sessions = new Map<string, PiSession>();
+  private probeModels?: { at: number; value: ModelInfo[] };
 
   constructor(opts: PiAdapterOptions = {}) {
     this.opts = opts;
@@ -233,23 +234,36 @@ export class PiAdapter implements AgentAdapter {
     }
   }
 
-  /** pi 的 `get_available_models` */
-  async models(handle: AgentSessionHandle): Promise<ModelInfo[]> {
-    const session = this.requireSession(handle);
-    const data = (await session.client.request('get_available_models')) as {
-      models?: Array<{ id?: string; name?: string; provider?: string }>;
-    };
-    return (data?.models ?? []).flatMap((m) =>
-      m.id
-        ? [
-            {
-              id: m.id,
-              ...(m.name ? { label: m.name } : {}),
-              ...(m.provider ? { provider: m.provider } : {}),
-            },
-          ]
-        : [],
-    );
+  /** pi 的 `get_available_models`；不传 handle 时用一个临时进程探测（带缓存） */
+  async models(handle?: AgentSessionHandle): Promise<ModelInfo[]> {
+    if (handle) {
+      const session = this.requireSession(handle);
+      const data = (await session.client.request('get_available_models')) as {
+        models?: Array<{ id?: string; name?: string; provider?: string }>;
+      };
+      return mapModels(data);
+    }
+    if (this.probeModels && Date.now() - this.probeModels.at < 5 * 60 * 1000) {
+      return this.probeModels.value;
+    }
+    // 探测进程刻意隔离扩展，避免 eager MCP 拖慢（spike 1）
+    const client = new PiRpcClient({
+      command: this.opts.command,
+      args: ['--mode', 'rpc', '--no-session', '--no-extensions'],
+      cwd: process.cwd(),
+      logger: this.logger,
+    });
+    try {
+      await client.request('get_session_stats');
+      const data = (await client.request('get_available_models')) as {
+        models?: Array<{ id?: string; name?: string; provider?: string }>;
+      };
+      const value = mapModels(data);
+      this.probeModels = { at: Date.now(), value };
+      return value;
+    } finally {
+      await client.close();
+    }
   }
 
   /** pi 的 `set_model`；`model` 支持 `<provider>/<modelId>`，只给 modelId 时自动找 provider */
@@ -353,4 +367,20 @@ export function buildPrompt(msg: UserMessage): string {
   for (const ctx of msg.context ?? []) parts.push(ctx.text);
   parts.push(msg.text);
   return parts.join('\n\n');
+}
+
+function mapModels(data: {
+  models?: Array<{ id?: string; name?: string; provider?: string }>;
+}): ModelInfo[] {
+  return (data?.models ?? []).flatMap((m) =>
+    m.id
+      ? [
+          {
+            id: m.id,
+            ...(m.name ? { label: m.name } : {}),
+            ...(m.provider ? { provider: m.provider } : {}),
+          },
+        ]
+      : [],
+  );
 }

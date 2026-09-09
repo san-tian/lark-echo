@@ -159,8 +159,8 @@ export interface AgentAdapter {
   stop(handle: AgentSessionHandle): Promise<void>;
   history?(handle: AgentSessionHandle, cursor?: string): AsyncIterable<HistoryEntry>;
   injectContext?(handle: AgentSessionHandle, ctx: ContextBlock): Promise<void>;
-  /** 列出可切换的模型（需要运行中的会话；探测不到就返回空） */
-  models?(handle: AgentSessionHandle): Promise<ModelInfo[]>;
+  /** 列出可切换的模型（有 handle 时查该会话；不传 handle 时 adapter 可自行探测） */
+  models?(handle?: AgentSessionHandle): Promise<ModelInfo[]>;
   /** 仅 `modelSwitch === 'runtime'` 时实现；`model` 支持 `<provider>/<modelId>` */
   setModel?(handle: AgentSessionHandle, model: string): Promise<void>;
 }

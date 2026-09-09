@@ -14,6 +14,8 @@ import {
   Dispatcher,
   countPendingInbound,
   getSessionModel,
+  getSetting,
+  defaultModelKey,
   setSessionModel,
   listSessionSettings,
   type AgentAdapter,
@@ -82,7 +84,8 @@ export class Daemon {
     this.pool = new SessionPool({
       adapters: opts.adapters,
       logger: this.logger,
-      getModel: (sessionId) => getSessionModel(this.db, sessionId),
+      getModel: (sessionId, agent) =>
+        getSessionModel(this.db, sessionId) ?? getSetting(this.db, defaultModelKey(agent)),
       ...(opts.idleMs ? { idleMs: opts.idleMs } : {}),
     });
     this.dispatcher = new Dispatcher({
