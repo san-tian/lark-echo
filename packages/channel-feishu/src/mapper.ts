@@ -1,4 +1,4 @@
-import type { InboundMessage } from '@lark-echo/core';
+import type { HistoryMessage, InboundMessage } from '@lark-echo/core';
 
 /** 飞书 im.message.receive_v1 事件（只声明我们用到的字段） */
 export interface FeishuMessageEvent {
@@ -129,3 +129,28 @@ function safeParse(raw: string): Record<string, unknown> | undefined {
 }
 
 const shortId = (id: string): string => (id.length > 8 ? `${id.slice(0, 6)}…` : id);
+
+/** 历史消息（bootstrapHistory）解析：系统消息/空文本返回 undefined */
+export function toHistoryMessage(item: unknown): HistoryMessage | undefined {
+  const it = item as {
+    message_id?: string;
+    msg_type?: string;
+    content?: string;
+    body?: { content?: string };
+    create_time?: string;
+    sender?: { id?: string; sender_type?: string; id_type?: string };
+  };
+  if (!it?.message_id) return undefined;
+  if (it.msg_type === 'system') return undefined;
+  // 消息列表 API 的内容在 body.content 里（事件 API 才是 message.content）
+  const raw = it.body?.content ?? it.content ?? '{}';
+  let text = extractText(it.msg_type ?? 'text', raw).trim();
+  if (!text) return undefined;
+  // 去掉 @_user_1 这类提及占位
+  text = text.replace(/@_user_\d+/g, '').trim();
+  if (!text) return undefined;
+  const isBot = it.sender?.sender_type === 'app' || it.sender?.sender_type === 'bot';
+  const senderId = it.sender?.id ?? '';
+  const senderName = isBot ? '机器人' : senderId ? shortId(senderId) : 'unknown';
+  return { id: it.message_id, senderName, text, ts: Number(it.create_time ?? 0) };
+}

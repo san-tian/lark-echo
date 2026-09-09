@@ -14,7 +14,7 @@ import type {
   TurnResult,
   UserMessage,
 } from '../types.ts';
-import type { Channel, ChatInfo, DoctorCheck, OutboundResult, ReceiptKind, ReceiptOptions } from '../channel.ts';
+import type { Channel, ChatInfo, DoctorCheck, HistoryMessage, OutboundResult, ReceiptKind, ReceiptOptions } from '../channel.ts';
 import type { SessionDriver } from '../session-driver.ts';
 
 export interface FakeChannelState {
@@ -30,6 +30,8 @@ export class FakeChannel implements Channel {
   readonly sent: OutboundMessage[] = [];
   readonly receipts: { conversationKey: ConversationKey; kind: ReceiptKind; opts?: ReceiptOptions }[] = [];
   chats: ChatInfo[] = [];
+  /** bootstrapHistory 用：预置的历史消息 */
+  history: HistoryMessage[] = [];
   failNextSend = false;
   private onInbound?: (msg: InboundMessage) => void;
 
@@ -56,6 +58,9 @@ export class FakeChannel implements Channel {
   }
   async listChats(): Promise<ChatInfo[]> {
     return this.chats;
+  }
+  async fetchHistory(_chatId: string, limit: number): Promise<HistoryMessage[]> {
+    return this.history.slice(-limit);
   }
   async doctor(): Promise<DoctorCheck[]> {
     return [{ id: 'fake', ok: true }];

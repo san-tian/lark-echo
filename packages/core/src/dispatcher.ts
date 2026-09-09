@@ -1,6 +1,6 @@
 import { createLogger, type Logger } from './logger.ts';
 import { newTraceId } from './ids.ts';
-import { formatPendingWindow } from './pending-window.ts';
+import { formatPendingWindow, formatHistorical } from './pending-window.ts';
 import { decideInbound, chatIdOfKey, conversationKeyFor, sessionRefFor } from './router.ts';
 import { SessionQueue } from './queue.ts';
 import type { Channel } from './channel.ts';
@@ -19,8 +19,10 @@ import {
   markOutboundFailed,
   markOutboundSent,
 } from './state/outbound.ts';
+import { getBootstrapRecord, saveBootstrapRecord } from './state/bootstrap.ts';
 import type {
   ConversationKey,
+  ContextBlock,
   InboundMessage,
   OutboundMessage,
   TurnEvent,
@@ -38,6 +40,8 @@ export interface DispatcherOptions {
   chunkLimit?: number;
   /** 出站重试上限（超过则标记 failed，不再重试） */
   maxSendAttempts?: number;
+  /** bootstrapHistory（§6.2）：绑定时回填群历史，默认开、50 条、7 天内 */
+  bootstrap?: { enabled?: boolean; maxMessages?: number; maxAgeDays?: number };
   onTurnEvent?: (event: TurnEvent) => void;
 }
 
@@ -53,6 +57,7 @@ export class Dispatcher {
   private readonly pendingWindowLimit: number;
   private readonly chunkLimit: number;
   private readonly maxSendAttempts: number;
+  private readonly bootstrap: { enabled: boolean; maxMessages: number; maxAgeDays: number };
   private readonly onTurnEvent?: (event: TurnEvent) => void;
 
   constructor(opts: DispatcherOptions) {
@@ -64,6 +69,11 @@ export class Dispatcher {
     this.pendingWindowLimit = opts.pendingWindowLimit ?? 50;
     this.chunkLimit = opts.chunkLimit ?? 4000;
     this.maxSendAttempts = opts.maxSendAttempts ?? 3;
+    this.bootstrap = {
+      enabled: opts.bootstrap?.enabled ?? true,
+      maxMessages: opts.bootstrap?.maxMessages ?? 50,
+      maxAgeDays: opts.bootstrap?.maxAgeDays ?? 7,
+    };
     this.onTurnEvent = opts.onTurnEvent;
   }
 
@@ -145,12 +155,17 @@ export class Dispatcher {
     try {
       const { adapter, handle } = await this.driver.acquire(ref);
       this.driver.touch(ref);
+      const bootstrap = await this.ensureBootstrap(msg, ref);
+      const contextBlocks: ContextBlock[] = [
+        ...(bootstrap ? [bootstrap] : []),
+        ...(context ? [context] : []),
+      ];
       const turn = await adapter.send(handle, {
         // 决策 21：以普通用户聊天的形式注入（用户名字），不提「飞书」，
         // 避免触发 agent 主动调 lark-cli 回群
         text: `[${msg.actor.name}] ${msg.text}`,
         conversationKey: msg.conversationKey,
-        context: context ? [context] : [],
+        context: contextBlocks,
       });
       turnId = turn.turnId;
       const off = turn.onEvent((event) => {
@@ -183,6 +198,47 @@ export class Dispatcher {
         () => undefined,
       );
     }
+  }
+
+  /**
+   * bootstrapHistory（§6.2）：该群第一次触发时，把最近 N 条历史作为只读上下文注入一次。
+   * 幂等：以 (session_id, chat_id) 记入 bootstrap_records，重启/重绑不重复。
+   */
+  private async ensureBootstrap(
+    msg: InboundMessage,
+    ref: NonNullable<ReturnType<typeof sessionRefFor>>,
+  ): Promise<ContextBlock | undefined> {
+    if (!this.bootstrap.enabled) return undefined;
+    if (!this.channel.fetchHistory) return undefined;
+    const chatId = chatIdOf(msg);
+    if (getBootstrapRecord(this.db, ref.sessionId, chatId)) return undefined;
+    const history = await this.channel
+      .fetchHistory(chatId, this.bootstrap.maxMessages, this.bootstrap.maxAgeDays)
+      .catch((err: unknown) => {
+        this.logger.warn('bootstrap history fetch failed', {
+          chatId,
+          sessionId: ref.sessionId,
+          error: String(err),
+        });
+        return [];
+      });
+    if (history.length === 0) return undefined;
+    const lines = history.map((h) => `[${formatTime(h.ts)}] ${h.senderName}: ${h.text}`);
+    const ctx = formatHistorical(msg.conversationKey, `群 ${chatId.slice(0, 8)}…`, lines);
+    saveBootstrapRecord(this.db, {
+      sessionId: ref.sessionId,
+      chatId,
+      ...(history[history.length - 1] ? { lastMsgId: history[history.length - 1]!.id } : {}),
+      count: history.length,
+      text: ctx.text,
+      fetchedAt: Date.now(),
+    });
+    this.logger.info('bootstrap history injected', {
+      chatId,
+      sessionId: ref.sessionId,
+      count: history.length,
+    });
+    return ctx;
   }
 
   /** 出站：落盘 → 发送 → 标记（缺口 B：按 turnId 幂等） */
@@ -237,6 +293,8 @@ export class Dispatcher {
     });
   }
 }
+
+const formatTime = (ts: number): string => new Date(ts).toISOString().slice(11, 16); // HH:MM
 
 /** 4000 字分片，优先在换行处切，保护代码块（§10.1） */
 export function splitText(text: string, limit: number): string[] {

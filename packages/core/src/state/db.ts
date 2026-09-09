@@ -75,6 +75,16 @@ CREATE TABLE IF NOT EXISTS session_aliases (
   real_id    TEXT NOT NULL,                 -- adapter/CLI 实际使用的 id（如 codex thread_id）
   updated_at INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS bootstrap_records (
+  session_id  TEXT NOT NULL,                -- bootstrapHistory（§6.2），每个群只回填一次
+  chat_id     TEXT NOT NULL,
+  last_msg_id TEXT,
+  count       INTEGER NOT NULL,
+  text        TEXT NOT NULL,
+  fetched_at  INTEGER NOT NULL,
+  PRIMARY KEY(session_id, chat_id)
+);
 `;
 
 export type Db = DatabaseSync;

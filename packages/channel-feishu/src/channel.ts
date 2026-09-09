@@ -4,6 +4,7 @@ import {
   type Channel,
   type ChatInfo,
   type ChatMember,
+  type HistoryMessage,
   type ConversationKey,
   type DoctorCheck,
   type InboundMessage,
@@ -14,7 +15,7 @@ import {
   type ReceiptOptions,
 } from '@lark-echo/core';
 import * as lark from '@larksuiteoapi/node-sdk';
-import { toInboundMessage, type FeishuMessageEvent } from './mapper.ts';
+import { toHistoryMessage, toInboundMessage, type FeishuMessageEvent } from './mapper.ts';
 
 export interface FeishuChannelOptions {
   appId: string;
@@ -213,6 +214,44 @@ export class FeishuChannel implements Channel {
     return (res.data?.items ?? []).flatMap((m) =>
       m.member_id ? [{ id: m.member_id, name: m.name ?? m.member_id }] : [],
     );
+  }
+
+  /**
+   * 拉群历史（bootstrapHistory §6.2）。按时间倒序翻页，取最近 limit 条，
+   * 返回 oldest→newest；过滤系统消息、空文本、超出 maxAgeDays 的。
+   */
+  async fetchHistory(chatId: string, limit = 50, maxAgeDays = 7): Promise<HistoryMessage[]> {
+    const since = maxAgeDays > 0 ? Date.now() - maxAgeDays * 86_400_000 : 0;
+    const out: HistoryMessage[] = [];
+    let pageToken: string | undefined;
+    for (;;) {
+      const res = (await this.client.request({
+        method: 'GET',
+        url: '/open-apis/im/v1/messages',
+        params: {
+          container_id_type: 'chat',
+          container_id: chatId,
+          sort_type: 'ByCreateTimeDesc',
+          page_size: 50,
+          ...(pageToken ? { page_token: pageToken } : {}),
+        },
+      })) as {
+        code?: number;
+        msg?: string;
+        data?: { items?: unknown[]; page_token?: string };
+      };
+      if (res.code !== undefined && res.code !== 0) {
+        throw new Error(`feishu history failed: code=${res.code} msg=${res.msg ?? ''}`);
+      }
+      for (const item of res.data?.items ?? []) {
+        const parsed = toHistoryMessage(item);
+        if (!parsed || parsed.ts < since) continue;
+        out.push(parsed);
+      }
+      pageToken = res.data?.page_token ?? undefined;
+      if (!pageToken || out.length >= limit) break;
+    }
+    return out.sort((a, b) => a.ts - b.ts).slice(-limit);
   }
 
   async listChats(): Promise<ChatInfo[]> {

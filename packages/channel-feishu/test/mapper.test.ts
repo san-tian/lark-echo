@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { extractText, toInboundMessage } from '../src/mapper.ts';
+import { extractText, toInboundMessage, toHistoryMessage } from '../src/mapper.ts';
 
 const baseEvent = (overrides: {
   message?: Record<string, unknown>;
@@ -97,4 +97,30 @@ test('富文本（post）抽取文本节点', () => {
 test('发送者姓名由调用方注入', () => {
   const msg = toInboundMessage(baseEvent(), { senderName: '张三' });
   assert.equal(msg?.actor.name, '张三');
+});
+
+test('toHistoryMessage：文本/系统/空文本/机器人', () => {
+  const text = toHistoryMessage({
+    message_id: 'om_1',
+    msg_type: 'text',
+    body: { content: JSON.stringify({ text: '你好 @_user_1' }) },
+    create_time: '1700000000000',
+    sender: { id: 'ou_abc', sender_type: 'user' },
+  });
+  assert.equal(text?.text, '你好');
+  assert.match(text!.senderName, /ou_ab/);
+  assert.equal(text!.ts, 1700000000000);
+
+  // 机器人消息标成「机器人」
+  const bot = toHistoryMessage({
+    message_id: 'om_b',
+    msg_type: 'text',
+    body: { content: JSON.stringify({ text: 'hi' }) },
+    create_time: '1',
+    sender: { id: 'cli_x', sender_type: 'app' },
+  });
+  assert.equal(bot?.senderName, '机器人');
+
+  assert.equal(toHistoryMessage({ message_id: 'om_2', msg_type: 'system' }), undefined);
+  assert.equal(toHistoryMessage({ msg_type: 'text', body: { content: '{}' } }), undefined);
 });

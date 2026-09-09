@@ -25,6 +25,13 @@ export interface ChatMember {
   name: string;
 }
 
+export interface HistoryMessage {
+  id: string;
+  senderName: string;
+  text: string;
+  ts: number;
+}
+
 /**
  * 渠道适配层契约。飞书是第一个实现（packages/channel-feishu），
  * 后续 Slack/企微沿用同一形状。
@@ -46,6 +53,8 @@ export interface Channel {
   listChats(): Promise<ChatInfo[]>;
   /** 群成员（open_id + 名字），供「仅我」选择器使用（决策 19） */
   listMembers?(chatId: string): Promise<ChatMember[]>;
+  /** 拉取群历史（bootstrapHistory，§6.2）；返回 oldest→newest */
+  fetchHistory?(chatId: string, limit: number, maxAgeDays: number): Promise<HistoryMessage[]>;
   doctor(): Promise<DoctorCheck[]>;
 }
 
