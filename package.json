@@ -11,7 +11,7 @@
     "node": ">=24"
   },
   "scripts": {
-    "typecheck": "tsc -p packages/core && tsc -p packages/adapter-pi && tsc -p packages/daemon",
+    "typecheck": "tsc -p packages/core && tsc -p packages/adapter-pi && tsc -p packages/adapter-claude && tsc -p packages/adapter-codex && tsc -p packages/daemon && tsc -p packages/channel-feishu && tsc -p packages/ui && tsc -p packages/cli",
     "test": "node --disable-warning=ExperimentalWarning --test $(find packages/*/test -name '*.test.ts' | sort)",
     "test:unit": "node --disable-warning=ExperimentalWarning --test $(find packages/core/test packages/daemon/test -name '*.test.ts' | sort)",
     "test:pi": "node --disable-warning=ExperimentalWarning --test packages/adapter-pi/test/*.test.ts"
