@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { TurnEvent } from '@lark-echo/core';
+import type { TurnEvent, TurnResult } from '@lark-echo/core';
 import { CodexAdapter, buildPrompt } from '../src/adapter.ts';
 import { buildTurnArgs, resolveCodexCommand } from '../src/codex-cli.ts';
 import { codexItem, parseCodexLine, toolLabel } from '../src/events.ts';
@@ -65,6 +65,20 @@ test('buildTurnArgs：新会话走 stdin，不把 prompt 放 argv', () => {
   assert.ok(args.includes('-c') && args.includes('approval_policy="never"'));
   assert.deepEqual(args.slice(-2), ['--', '-']);
   assert.ok(!args.some((arg) => arg.includes('Reply with exactly')));
+});
+
+test('buildTurnArgs：`provider/model` 切 provider，否则只当模型 id', () => {
+  const args = buildTurnArgs({
+    model: 'OpenAI/glm-5.2',
+    sandboxMode: 'read-only',
+    outputLastMessagePath: '/tmp/out.txt',
+  });
+  assert.ok(args.includes('model_provider="OpenAI"'));
+  assert.ok(args.includes('-m') && args.includes('glm-5.2'));
+  // 无斜杠时只是 -m
+  const args2 = buildTurnArgs({ model: 'gpt-6-astra', outputLastMessagePath: '/tmp/out.txt' });
+  assert.ok(args2.includes('-m') && args2.includes('gpt-6-astra'));
+  assert.ok(!args2.some((a) => a.startsWith('model_provider=')));
 });
 
 test('buildTurnArgs：resume 没有 -s，沙箱用 -c sandbox_mode', () => {
@@ -244,30 +258,50 @@ const hasCodex = ((): boolean => {
   }
 })();
 
-let realThreadId: string | undefined;
-let realCwd: string | undefined;
+/** 实测 provider 会断流（codex 自报 Reconnecting 1/5…），这是环境抖动，不是 adapter bug */
+const TRANSIENT_PROVIDER = /stream disconnected|Reconnecting|socket hang up|ECONNRESET/i;
 
-test('契约：真实 codex 起一轮，最终文本含 OK，且 rollout 可读', { skip: !hasCodex, timeout: 240_000 }, async () => {
-  realCwd = tempDir('lark-echo-codex-real-');
+async function runTurnWithRetry(
+  adapter: CodexAdapter,
+  handle: Parameters<CodexAdapter['send']>[0],
+  text: string,
+  attempts = 4,
+): Promise<{ result: TurnResult; deltas: string[] }> {
+  const deltas: string[] = [];
+  let result: TurnResult = { text: '', aborted: false, error: 'no attempt' };
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    deltas.length = 0;
+    const turn = await adapter.send(handle, { text });
+    turn.onEvent((event) => {
+      if (event.type === 'delta' && event.text) deltas.push(event.text);
+    });
+    result = await turn.settled;
+    if (!result.error || !TRANSIENT_PROVIDER.test(result.error)) break;
+    await new Promise((resolve) => setTimeout(resolve, 3_000));
+  }
+  return { result, deltas };
+}
+
+test('契约：真实 codex 起一轮，最终文本含 OK，且 rollout 可读', { skip: !hasCodex, timeout: 300_000 }, async (t) => {
+  const cwd = tempDir('lark-echo-codex-real-');
   const adapter = new CodexAdapter({
     command: codexCommand,
     sandboxMode: 'read-only',
-    turnTimeoutMs: 180_000,
+    turnTimeoutMs: 60_000,
   });
-  const handle = await adapter.start({ cwd: realCwd });
-  const deltas: string[] = [];
-  const turn = await adapter.send(handle, { text: 'Reply with exactly: OK' });
-  turn.onEvent((event) => {
-    if (event.type === 'delta' && event.text) deltas.push(event.text);
-  });
-  const result = await turn.settled;
+  const handle = await adapter.start({ cwd });
+  const { result, deltas } = await runTurnWithRetry(adapter, handle, 'Reply with exactly: OK');
 
   assert.equal(result.aborted, false, `真实 turn 不应被 abort：${result.error ?? ''}`);
+  if (result.error && TRANSIENT_PROVIDER.test(result.error)) {
+    await adapter.stop(handle);
+    t.skip(`provider 连续断流，环境不可用：${result.error}`);
+    return;
+  }
   assert.equal(result.error, undefined);
   assert.match(result.text, /OK/);
   assert.ok(deltas.join('').includes('OK'), '应收到 delta');
   assert.match(handle.ref.sessionId, /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
-  realThreadId = handle.ref.sessionId;
 
   const history: string[] = [];
   for await (const entry of adapter.history(handle)) history.push(`${entry.role}:${entry.text}`);
@@ -277,23 +311,35 @@ test('契约：真实 codex 起一轮，最终文本含 OK，且 rollout 可读'
   await adapter.stop(handle);
 });
 
-test('契约：resume 既有 thread 能记得上一轮', { skip: !hasCodex, timeout: 240_000 }, async (t) => {
-  if (!realThreadId || !realCwd) {
-    t.skip('需要先跑通上一轮真实 run');
+test('契约：resume 既有 thread 能记得上一轮', { skip: !hasCodex, timeout: 420_000 }, async (t) => {
+  // 自包含：先造一条 thread，再用新 adapter 实例 resume 它
+  const cwd = tempDir('lark-echo-codex-resume-');
+  const adapter1 = new CodexAdapter({ command: codexCommand, sandboxMode: 'read-only', turnTimeoutMs: 60_000 });
+  const h1 = await adapter1.start({ cwd });
+  const first = await runTurnWithRetry(adapter1, h1, 'Reply with exactly: ONE');
+  if (first.result.error && TRANSIENT_PROVIDER.test(first.result.error)) {
+    await adapter1.stop(h1);
+    t.skip(`provider 连续断流，环境不可用：${first.result.error}`);
     return;
   }
-  const adapter = new CodexAdapter({
-    command: codexCommand,
-    sandboxMode: 'read-only',
-    turnTimeoutMs: 180_000,
-  });
-  const handle = await adapter.start({ cwd: realCwd, sessionId: realThreadId });
-  assert.equal(handle.ref.sessionId, realThreadId);
-  const turn = await adapter.send(handle, {
-    text: 'What did I ask you to reply with earlier? Answer with just that word.',
-  });
-  const result = await turn.settled;
-  assert.equal(result.error, undefined, `resume 不应报错：${result.error ?? ''}`);
-  assert.match(result.text, /OK/);
-  await adapter.stop(handle);
+  assert.equal(first.result.error, undefined, `第一轮不应报错：${first.result.error ?? ''}`);
+  const threadId = h1.ref.sessionId;
+  await adapter1.stop(h1);
+
+  const adapter2 = new CodexAdapter({ command: codexCommand, sandboxMode: 'read-only', turnTimeoutMs: 60_000 });
+  const h2 = await adapter2.start({ cwd, sessionId: threadId });
+  assert.equal(h2.ref.sessionId, threadId);
+  const second = await runTurnWithRetry(
+    adapter2,
+    h2,
+    'What did I ask you to reply with earlier? Answer with just that word.',
+  );
+  if (second.result.error && TRANSIENT_PROVIDER.test(second.result.error)) {
+    await adapter2.stop(h2);
+    t.skip(`provider 连续断流，环境不可用：${second.result.error}`);
+    return;
+  }
+  assert.equal(second.result.error, undefined, `resume 不应报错：${second.result.error ?? ''}`);
+  assert.match(second.result.text, /ONE/);
+  await adapter2.stop(h2);
 });

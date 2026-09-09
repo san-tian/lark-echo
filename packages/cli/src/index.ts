@@ -287,7 +287,7 @@ async function cmdBind(args: Args): Promise<number> {
   const binding: Omit<Binding, 'createdAt'> & { createdAt?: number } = {
     chatId,
     sessionId,
-    agent: 'pi',
+    agent: (flag(args, 'agent') ?? 'pi') as Binding['agent'],
     cwd,
     ownerOpenId: owner,
     mirrorMode: 'off',
@@ -332,6 +332,7 @@ async function cmdBindings(): Promise<number> {
     print('没有绑定。用 lark-echo bind 创建一个。');
     return 0;
   }
+  const db = openDb();
   const sessions =
     (await withIpc((c) => c.call<SessionRow[]>('session.list'))) ?? ([] as SessionRow[]);
   const modelOf = new Map(sessions.map((s) => [s.ref.sessionId, s.model]));
@@ -340,7 +341,7 @@ async function cmdBindings(): Promise<number> {
     session: b.sessionId,
     agent: b.agent,
     mirror: b.mirrorMode,
-    model: modelOf.get(b.sessionId) ?? '-',
+    model: modelOf.get(b.sessionId) ?? getSessionModel(db, b.sessionId) ?? '-',
     owner: b.ownerOpenId,
   }));
   const widths = {
@@ -574,7 +575,7 @@ function usage(): void {
   lark-echo daemon run|start|stop|status|logs
   lark-echo doctor [--app <app_id>]       体检：凭据 / 权限 / 长连接
   lark-echo chats                         列出机器人所在的群
-  lark-echo bind [--session <id>] [--cwd <dir>] [--owner <open_id>|--anyone] [--chat <chat_id>]
+  lark-echo bind [--agent pi|claude|codex] [--session <id>] [--cwd <dir>] [--owner <open_id>|--anyone] [--chat <chat_id>]
   lark-echo unbind <chat_id>
   lark-echo bindings                      绑定总览（含模型与镜像档位）
   lark-echo mirror <chat_id> <off|user|user+assistant|full>

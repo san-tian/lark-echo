@@ -64,8 +64,15 @@ CREATE TABLE IF NOT EXISTS session_settings (
 );
 
 CREATE TABLE IF NOT EXISTS settings (
-  key        TEXT PRIMARY KEY,              -- 目前用 'default_model'
+  key        TEXT PRIMARY KEY,              -- 目前用 'default_model:<agent>'
   value      TEXT,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS session_aliases (
+  logical_id TEXT PRIMARY KEY,              -- 绑定里存的 id（稳定）
+  agent      TEXT NOT NULL,
+  real_id    TEXT NOT NULL,                 -- adapter/CLI 实际使用的 id（如 codex thread_id）
   updated_at INTEGER NOT NULL
 );
 `;

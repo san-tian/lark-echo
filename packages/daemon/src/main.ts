@@ -1,4 +1,4 @@
-import { createWriteStream, writeFileSync } from 'node:fs';
+import { createWriteStream, writeFileSync, unlinkSync } from 'node:fs';
 import {
   createLogger,
   ensureHome,
@@ -9,6 +9,8 @@ import {
   setLogSink,
 } from '@lark-echo/core';
 import { PiAdapter } from '@lark-echo/adapter-pi';
+import { ClaudeAdapter } from '@lark-echo/adapter-claude';
+import { CodexAdapter } from '@lark-echo/adapter-codex';
 import { FeishuChannel } from '@lark-echo/channel-feishu';
 import { Daemon } from './server.ts';
 
@@ -36,6 +38,12 @@ export async function runDaemon(): Promise<void> {
   }
 
   const db = openDb();
+  // 防御：清掉陈旧 socket（上次异常退出时可能没 unlink）
+  try {
+    unlinkSync(paths.socket());
+  } catch {
+    /* 不存在即可 */
+  }
   const channel = new FeishuChannel({
     appId: cred.appId,
     appSecret: cred.appSecret,
@@ -44,7 +52,11 @@ export async function runDaemon(): Promise<void> {
   const daemon = new Daemon({
     db,
     channel,
-    adapters: { pi: new PiAdapter({ logger }) },
+    adapters: {
+      pi: new PiAdapter({ logger }),
+      claude: new ClaudeAdapter({ logger }),
+      codex: new CodexAdapter({ logger }),
+    },
     logger,
   });
 

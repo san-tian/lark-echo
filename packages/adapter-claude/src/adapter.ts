@@ -64,6 +64,8 @@ export interface ClaudeAdapterOptions {
 export interface ClaudeArgsInput {
   /** claude 自己的 session_id；第一轮没有 */
   resume?: string;
+  /** 第一轮用它钉住 session id，使逻辑 id == claude id（daemon 重启后仍能 resume） */
+  sessionId?: string;
   model?: string;
   permissionMode?: string;
   appendSystemPrompt?: string;
@@ -75,9 +77,20 @@ export interface ClaudeArgsInput {
  * 实测约束：`--output-format stream-json` 必须配 `--verbose`；增量消息要 `--include-partial-messages`。
  * prompt **不走 argv**（写 stdin），避免把群消息里的敏感内容放进 `ps`。
  */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * 钉住 session id 的策略：
+ * - 逻辑 id 是 UUID → 直接 `--session-id`，claude 用它，重启后能 `--resume`（无需别名）
+ * - 不是 UUID（如 `le-e2e`）→ claude 会报 `Invalid session ID`，所以不传，
+ *   改成从流里学真实 id，由 daemon 的 session_aliases 持久化
+ */
+const pinnableId = (id: string): string | undefined => (UUID_RE.test(id) ? id : undefined);
+
 export function buildArgs(input: ClaudeArgsInput): string[] {
   const args = ['-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages'];
   if (input.resume) args.push('--resume', input.resume);
+  else if (input.sessionId) args.push('--session-id', input.sessionId);
   if (input.model) args.push('--model', input.model);
   if (input.permissionMode) args.push('--permission-mode', input.permissionMode);
   if (input.appendSystemPrompt) args.push('--append-system-prompt', input.appendSystemPrompt);
@@ -230,7 +243,13 @@ export class ClaudeAdapter implements AgentAdapter {
       .join('\n\n');
     const model = session.model ?? this.opts.model;
     const args = buildArgs({
-      ...(session.claudeSessionId ? { resume: session.claudeSessionId } : {}),
+      ...(session.claudeSessionId
+        ? { resume: session.claudeSessionId }
+        : // 第一轮：逻辑 id 是 UUID 就钉住，否则让 claude 自己生成、我们从流里学
+          (() => {
+            const pinned = pinnableId(session.ref.sessionId);
+            return pinned ? { sessionId: pinned } : {};
+          })()),
       ...(model ? { model } : {}),
       ...(this.opts.permissionMode ? { permissionMode: this.opts.permissionMode } : {}),
       ...(appendSystemPrompt ? { appendSystemPrompt } : {}),
@@ -366,7 +385,14 @@ export class ClaudeAdapter implements AgentAdapter {
     const sid = sessionIdOf(msg);
     if (sid && session.claudeSessionId !== sid) {
       // 第一轮在这里学到 claude 自己的 session_id，之后每轮 --resume 它
+      // （因为我们用 --session-id 钉过，正常情况下 sid === ref.sessionId）
       session.claudeSessionId = sid;
+      if (sid !== session.ref.sessionId) {
+        this.logger.warn('claude used a different session id than requested', {
+          requested: session.ref.sessionId,
+          actual: sid,
+        });
+      }
       this.logger.info('learned claude session id', {
         sessionId: session.ref.sessionId,
         claudeSessionId: sid,

@@ -35,6 +35,8 @@ export interface PiAdapterOptions {
    */
   prestartMcp?: boolean;
   defaultModel?: string;
+  /** 会话级系统提示（`--append-system-prompt`，决策 21：回复契约） */
+  appendSystemPrompt?: string;
   extraArgs?: string[];
   /** 额外环境变量（如 PI_CODING_AGENT_DIR），与 process.env 合并 */
   env?: Record<string, string>;
@@ -105,6 +107,9 @@ export class PiAdapter implements AgentAdapter {
     if (opts.sessionId) args.push('--session-id', opts.sessionId);
     const model = opts.model ?? this.opts.defaultModel;
     if (model) args.push('--model', model);
+    if (this.opts.appendSystemPrompt) {
+      args.push('--append-system-prompt', this.opts.appendSystemPrompt);
+    }
     args.push(...(this.opts.extraArgs ?? []));
 
     this.logger.info('starting pi rpc', { cwd: opts.cwd, args: args.join(' ') });

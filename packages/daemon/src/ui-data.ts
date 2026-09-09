@@ -101,6 +101,9 @@ export class UiData {
     const nameOf = new Map(chats.map((c) => [c.chatId, c.name]));
     const bindings = listBindings(this.deps.db).map((b) => ({
       ...b,
+      ...(getSessionModel(this.deps.db, b.sessionId)
+        ? { model: getSessionModel(this.deps.db, b.sessionId)! }
+        : {}),
       ...(nameOf.get(b.chatId) ? { name: nameOf.get(b.chatId) } : {}),
     }));
     const sessions: UiSession[] = this.deps.pool.list().map((s) => {

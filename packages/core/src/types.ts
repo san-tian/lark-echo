@@ -92,9 +92,9 @@ export interface ModelInfo {
   provider?: string;
 }
 
-/** 注入到 agent 的只读上下文（pendingWindow / bootstrapHistory） */
+/** 注入到 agent 的只读上下文（pendingWindow / bootstrapHistory / 指令） */
 export interface ContextBlock {
-  kind: 'pending-window' | 'historical';
+  kind: 'pending-window' | 'historical' | 'instructions';
   conversationKey: ConversationKey;
   chatName?: string;
   text: string;

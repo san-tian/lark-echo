@@ -14,6 +14,10 @@ export interface SessionPoolOptions {
   idleMs?: number;
   /** 启动会话时使用的模型（`<provider>/<modelId>`），来自 session_settings / 默认模型 */
   getModel?: (sessionId: string, agent: AgentId) => string | undefined;
+  /** 逻辑 id → adapter 实际使用的 id（如 codex thread_id），用于重启后 resume */
+  resolveSessionId?: (logicalId: string, agent: AgentId) => string | undefined;
+  /** adapter 学到真实 id 后回调（持久化别名） */
+  onSessionId?: (logicalId: string, agent: AgentId, realId: string) => void;
   logger?: Logger;
   now?: () => number;
 }
@@ -24,6 +28,8 @@ interface PoolEntry {
   handle: AgentSessionHandle;
   lastUsedAt: number;
   createdAt: number;
+  /** 已经上报过的真实 id，避免重复写库 */
+  reportedRealId?: string;
 }
 
 export interface SessionInfo {
@@ -37,16 +43,14 @@ export interface SessionInfo {
  */
 export class SessionPool implements SessionDriver {
   private readonly entries = new Map<string, PoolEntry>();
-  private readonly opts: Required<Omit<SessionPoolOptions, 'logger' | 'getModel'>> &
-    Pick<SessionPoolOptions, 'getModel'> & { logger: Logger };
+  private readonly opts: SessionPoolOptions & { logger: Logger; idleMs: number; now: () => number };
   private sweeper?: NodeJS.Timeout;
 
   constructor(opts: SessionPoolOptions) {
     this.opts = {
-      adapters: opts.adapters,
+      ...opts,
       idleMs: opts.idleMs ?? 30 * 60 * 1000,
       now: opts.now ?? (() => Date.now()),
-      getModel: opts.getModel,
       logger: opts.logger ?? createLogger({ svc: 'session-pool' }),
     };
   }
@@ -57,9 +61,11 @@ export class SessionPool implements SessionDriver {
       const adapter = this.opts.adapters[ref.agent];
       if (!adapter) throw new Error(`no adapter registered for agent: ${ref.agent}`);
       const model = this.opts.getModel?.(ref.sessionId, ref.agent);
+      // 有别名时用真实 id 启动（per-turn adapter 重启后 resume）
+      const realId = this.opts.resolveSessionId?.(ref.sessionId, ref.agent) ?? ref.sessionId;
       const handle = await adapter.start({
         cwd: ref.cwd,
-        sessionId: ref.sessionId,
+        sessionId: realId,
         ...(model ? { model } : {}),
       });
       entry = {
@@ -93,7 +99,19 @@ export class SessionPool implements SessionDriver {
 
   touch(ref: SessionRef): void {
     const entry = this.entries.get(ref.sessionId);
-    if (entry) entry.lastUsedAt = this.opts.now();
+    if (!entry) return;
+    entry.lastUsedAt = this.opts.now();
+    // per-turn adapter 会在第一轮把 handle.ref.sessionId 改成 CLI 真实 id
+    const real = entry.handle.ref.sessionId;
+    if (real && real !== ref.sessionId && entry.reportedRealId !== real) {
+      entry.reportedRealId = real;
+      this.opts.logger.info('session id alias learned', {
+        logicalId: ref.sessionId,
+        realId: real,
+        agent: ref.agent,
+      });
+      this.opts.onSessionId?.(ref.sessionId, ref.agent, real);
+    }
   }
 
   async release(sessionId: string): Promise<void> {

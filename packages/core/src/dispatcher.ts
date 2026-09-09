@@ -19,7 +19,12 @@ import {
   markOutboundFailed,
   markOutboundSent,
 } from './state/outbound.ts';
-import type { ConversationKey, InboundMessage, OutboundMessage, TurnEvent } from './types.ts';
+import type {
+  ConversationKey,
+  InboundMessage,
+  OutboundMessage,
+  TurnEvent,
+} from './types.ts';
 
 export interface DispatcherOptions {
   db: Db;
@@ -141,7 +146,9 @@ export class Dispatcher {
       const { adapter, handle } = await this.driver.acquire(ref);
       this.driver.touch(ref);
       const turn = await adapter.send(handle, {
-        text: `[${msg.actor.name} · 飞书] ${msg.text}`,
+        // 决策 21：以普通用户聊天的形式注入（用户名字），不提「飞书」，
+        // 避免触发 agent 主动调 lark-cli 回群
+        text: `[${msg.actor.name}] ${msg.text}`,
         conversationKey: msg.conversationKey,
         context: context ? [context] : [],
       });

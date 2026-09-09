@@ -8,6 +8,9 @@
   },
   "dependencies": {
     "@lark-echo/core": "0.0.1",
-    "@lark-echo/ui": "0.0.1"
+    "@lark-echo/ui": "0.0.1",
+    "@lark-echo/adapter-pi": "0.0.1",
+    "@lark-echo/adapter-claude": "0.0.1",
+    "@lark-echo/adapter-codex": "0.0.1"
   }
 }

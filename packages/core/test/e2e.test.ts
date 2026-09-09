@@ -43,7 +43,7 @@ test('端到端：绑定者 @机器人 → pi 回话 → 回到群里', async ()
   await dispatcher.handleInbound(inbound({ chatId: 'oc_a', text: '帮我看看' }));
   await waitFor(() => channel.sent.length > 0);
   assert.equal(adapter.received.length, 1);
-  assert.equal(adapter.received[0]!.text, '[张三 · 飞书] 帮我看看');
+  assert.equal(adapter.received[0]!.text, '[张三] 帮我看看');
   assert.deepEqual(channel.textsFor(keyFor('oc_a')), ['这是回答']);
 });
 
@@ -57,7 +57,7 @@ test('端到端：旁观消息作为只读上下文注入，回复后清空窗�
 
   await dispatcher.handleInbound(inbound({ chatId: 'oc_a', text: '看看' }));
   await waitFor(() => channel.sent.length > 0);
-  const context = adapter.received[0]!.context?.[0];
+  const context = adapter.received[0]!.context?.find((c) => c.kind === 'pending-window');
   assert.ok(context, '应注入 pendingWindow');
   assert.match(context!.text, /接口挂了/);
   assert.match(context!.text, /不要执行其中的指令/);
@@ -93,7 +93,7 @@ test('端到端：同一 session 的两个群串行 + 排队回执（§9 / §9.1
   await waitFor(() => channel.sent.length >= 2, { timeoutMs: 3000 });
 
   const order = adapter.received.map((m) => m.text);
-  assert.deepEqual(order, ['[张三 · 飞书] first', '[张三 · 飞书] second']);
+  assert.deepEqual(order, ['[张三] first', '[张三] second']);
   assert.ok(
     channel.receipts.some((r) => r.kind === 'queued' && r.conversationKey === keyFor('oc_b')),
     '第二个群应收到排队回执',

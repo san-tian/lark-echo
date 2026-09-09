@@ -75,3 +75,29 @@ export function listSettings(db: Db): Record<string, string | undefined> {
   }
   return out;
 }
+
+/* --------------------------- 会话 id 别名映射 --------------------------- */
+
+/**
+ * per-turn adapter（claude/codex）只能在第一轮才知道 CLI 真实 session id。
+ * 绑定里存的是稳定的逻辑 id，这里存「逻辑 id → 真实 id」，让 daemon 重启后仍能 resume。
+ */
+export function getSessionAlias(db: Db, logicalId: string): string | undefined {
+  const row = asRow<{ real_id: string }>(
+    db.prepare('SELECT real_id FROM session_aliases WHERE logical_id = ?').get(logicalId),
+  );
+  return row?.real_id ?? undefined;
+}
+
+export function setSessionAlias(
+  db: Db,
+  logicalId: string,
+  agent: string,
+  realId: string,
+  now = Date.now(),
+): void {
+  db.prepare(
+    `INSERT INTO session_aliases (logical_id, agent, real_id, updated_at) VALUES (?, ?, ?, ?)
+     ON CONFLICT(logical_id) DO UPDATE SET agent = excluded.agent, real_id = excluded.real_id, updated_at = excluded.updated_at`,
+  ).run(logicalId, agent, realId, now);
+}

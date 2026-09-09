@@ -37,6 +37,8 @@ export interface CodexAdapterOptions {
   /** 不传则沿用 codex 自己的 config.toml */
   sandboxMode?: SandboxMode;
   extraArgs?: string[];
+  /** 会话级系统提示，每轮都拼到 prompt 前面（决策 21：回复契约） */
+  appendSystemPrompt?: string;
   /** 默认 true（daemon 的 cwd 不一定是 git repo） */
   skipGitRepoCheck?: boolean;
   /** rollout 根目录；默认 `$CODEX_HOME/sessions` 或 `~/.codex/sessions` */
@@ -264,7 +266,10 @@ export class CodexAdapter implements AgentAdapter {
     let imagePaths: string[] = [];
     if (msg.images?.length) imagePaths = writeImages(tmpDir, msg.images);
 
-    const prompt = buildPrompt(msg, session.pendingContext);
+    const prompt = buildPrompt(msg, [
+      ...(this.opts.appendSystemPrompt ? [this.opts.appendSystemPrompt] : []),
+      ...session.pendingContext,
+    ]);
     session.pendingContext = [];
 
     const resumeId = session.fresh ? undefined : session.threadId;

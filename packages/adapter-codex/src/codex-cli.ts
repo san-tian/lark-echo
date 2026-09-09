@@ -58,7 +58,18 @@ export function buildTurnArgs(opts: TurnArgsOptions): string[] {
     else args.push('-s', opts.sandboxMode);
   }
   args.push('-c', 'approval_policy="never"');
-  if (opts.model) args.push('-m', opts.model);
+  if (opts.model) {
+    // 支持 `provider/model`：切 provider（否则 codex 只会用 config.toml 里的 model_provider）
+    const slash = opts.model.indexOf('/');
+    if (slash > 0) {
+      const provider = opts.model.slice(0, slash);
+      const modelId = opts.model.slice(slash + 1);
+      args.push('-c', `model_provider=${JSON.stringify(provider)}`);
+      args.push('-m', modelId);
+    } else {
+      args.push('-m', opts.model);
+    }
+  }
   if (opts.extraArgs?.length) args.push(...opts.extraArgs);
   args.push('-o', opts.outputLastMessagePath);
 

@@ -15,6 +15,8 @@ import {
   countPendingInbound,
   getSessionModel,
   getSetting,
+  getSessionAlias,
+  setSessionAlias,
   defaultModelKey,
   setSessionModel,
   listSessionSettings,
@@ -86,6 +88,9 @@ export class Daemon {
       logger: this.logger,
       getModel: (sessionId, agent) =>
         getSessionModel(this.db, sessionId) ?? getSetting(this.db, defaultModelKey(agent)),
+      resolveSessionId: (logicalId) => getSessionAlias(this.db, logicalId),
+      onSessionId: (logicalId, agent, realId) =>
+        setSessionAlias(this.db, logicalId, agent, realId),
       ...(opts.idleMs ? { idleMs: opts.idleMs } : {}),
     });
     this.dispatcher = new Dispatcher({

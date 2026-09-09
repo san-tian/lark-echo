@@ -343,22 +343,53 @@ test('适配器：子进程非零退出且没有 result 事件 → error', async
 });
 
 // ── 契约测试（真实 claude 2.1.258）────────────────────────────────────────
+//
+// ⚠️ 实测：本机的 ANTHROPIC_BASE_URL 是中转站（pi-api-cn.macaron.xin），对「几乎相同」的
+// prompt 会偶发返回一条与 prompt 无关的固定回复（"I'm ready. What would you like to work
+// on?"，实测 4 次里错 1~2 次）。这不是 adapter 的问题（转录里 user 消息是对的），但会让
+// 契约测试假红。对策：每轮用**唯一 token**，允许重试，断言只要求「至少一次」正确。
 
-test('契约：真实 claude 一轮跑通，最终文本来自 result 事件', { skip: !hasClaude, timeout: 180_000 }, async () => {
+const nonce = (): string => Math.random().toString(36).slice(2, 8);
+
+/** 最多试 attempts 次，返回第一个满足 accept 的文本 */
+async function firstMatching(
+  attempts: number,
+  run: () => Promise<string>,
+  accept: (text: string) => boolean,
+): Promise<{ text: string; seen: string[] }> {
+  const seen: string[] = [];
+  for (let i = 0; i < attempts; i++) {
+    const text = await run();
+    seen.push(text);
+    if (accept(text)) return { text, seen };
+  }
+  return { text: seen[seen.length - 1] ?? '', seen };
+}
+
+test('契约：真实 claude 一轮跑通，最终文本来自 result 事件', { skip: !hasClaude, timeout: 300_000 }, async () => {
   const cwd = tempDir('lark-echo-claude-live-');
   const adapter = new ClaudeAdapter();
   const handle = await adapter.start({ cwd, sessionId: 'contract-claude-001' });
   assert.equal(handle.ref.sessionId, 'contract-claude-001');
 
-  const turn = await adapter.send(handle, { text: 'Reply with exactly: OK' });
   const deltas: string[] = [];
-  turn.onEvent((event) => {
-    if (event.type === 'delta' && event.text) deltas.push(event.text);
-  });
-  const result = await turn.settled;
-  assert.equal(result.aborted, false);
-  assert.equal(result.error, undefined);
-  assert.match(result.text, /OK/);
+  const token = `OK-${nonce()}`;
+  const { text, seen } = await firstMatching(
+    3,
+    async () => {
+      const turn = await adapter.send(handle, { text: `Reply with exactly: ${token}` });
+      turn.onEvent((event) => {
+        if (event.type === 'delta' && event.text) deltas.push(event.text);
+      });
+      const result = await turn.settled;
+      assert.equal(result.aborted, false);
+      assert.equal(result.error, undefined);
+      return result.text;
+    },
+    (text) => text.includes(token),
+  );
+  assert.match(text, /OK/, `三轮都拿到与 prompt 无关的回复：${seen.join(' | ')}`);
+  assert.ok(text.includes(token), `最终文本应来自 result 事件：${text}`);
   assert.ok(deltas.length > 0, '应收到流式 delta');
   assert.match(deltas.join(''), /OK/);
   await adapter.stop(handle);
@@ -369,22 +400,34 @@ test('契约：同一 session 第二轮 --resume 记得上一轮，history() 读
   const adapter = new ClaudeAdapter();
   const handle = await adapter.start({ cwd, sessionId: 'contract-claude-002' });
 
-  const first = await (await adapter.send(handle, { text: 'Reply with exactly: ONE' })).settled;
-  assert.match(first.text, /ONE/);
+  const token = `OK-${nonce()}`;
+  await (await adapter.send(handle, { text: `Reply with exactly: ${token}` })).settled;
 
-  const second = await (
-    await adapter.send(handle, {
-      text: 'What word did I ask you to reply with? Reply with just that word.',
-    })
-  ).settled;
-  assert.equal(second.error, undefined);
-  assert.match(second.text, /ONE/, `续跑应记得上一轮，实际：${second.text}`);
+  // 第二轮：换一个带 nonce 的问法（避免中转站对同一 prompt 的固定回复），要求回忆 token
+  const { text, seen } = await firstMatching(
+    3,
+    async () => {
+      const turn = await adapter.send(handle, {
+        text: `(ref ${nonce()}) What token did I ask you to reply with? Reply with just that token.`,
+      });
+      const result = await turn.settled;
+      assert.equal(result.error, undefined);
+      return result.text;
+    },
+    (text) => text.includes(token),
+  );
+  assert.ok(text.includes(token), `续跑应记得上一轮的 token，实际：${seen.join(' | ')}`);
 
+  // 确定性证据：--resume 之后转录里同时有第一轮和第二轮的 user 消息
   const entries: string[] = [];
   for await (const entry of adapter.history(handle)) entries.push(`${entry.role}:${entry.text}`);
   assert.ok(
-    entries.some((entry) => entry.startsWith('user:') && entry.includes('ONE')),
+    entries.some((entry) => entry.startsWith('user:') && entry.includes(token)),
     `history 应包含第一轮的用户消息，实际：${entries.join(' | ')}`,
+  );
+  assert.ok(
+    entries.filter((entry) => entry.startsWith('user:')).length >= 2,
+    `同一转录里应有两轮 user 消息（证明 resume 生效），实际：${entries.join(' | ')}`,
   );
   assert.ok(
     entries.some((entry) => entry.startsWith('assistant:')),
