@@ -615,6 +615,14 @@ function renderSettings() {
         '<option value="workspace-write"' + (st.codexSandboxMode === 'workspace-write' ? ' selected' : '') + '>可写工作区</option>' +
         '<option value="danger-full-access"' + (st.codexSandboxMode === 'danger-full-access' ? ' selected' : '') + '>完全访问（危险）</option>' +
       '</select><div class="hint">下一轮 codex 调用生效。</div></div></fieldset>' +
+    '<fieldset><legend>让 agent 自己发文件</legend>' +
+      '<div class="field"><label class="row" for="s-chat-tools">' +
+        '<input type="checkbox" id="s-chat-tools"' + (st.chatToolsEnabled ? ' checked' : '') + '>' +
+        '<span>告诉 agent 它在哪个群，允许它用 lark-cli 发文件</span></label>' +
+        '<div class="hint">开了之后 agent 会知道当前 chat_id，可以自己发图片和文件（以机器人身份）。' +
+        '文字回复仍然由 instead 自动送达，注入的说明里明确要求它不要重复发送。<br>' +
+        '默认关闭：把「你在群里」这件事告诉 agent，它有时会顺手调 lark-cli 回消息，' +
+        '导致群里收到两条重复。只在确实需要 agent 发文件时开。</div></div></fieldset>' +
     '<button class="btn primary" data-act="save-settings">保存设置</button></div>';
 }
 
@@ -783,13 +791,15 @@ document.addEventListener('click', function (ev) {
       var pairs = [
         ['bootstrap.enabled', 's-boot'], ['bootstrap.max_messages', 's-bmax'],
         ['bootstrap.max_age_days', 's-bdays'], ['pending_window.max_messages', 's-pw'],
-        ['codex.sandbox_mode', 's-sandbox']
+        ['codex.sandbox_mode', 's-sandbox'], ['chat_tools.enabled', 's-chat-tools']
       ];
       var chain = Promise.resolve();
       pairs.forEach(function (p) {
         var i = document.getElementById(p[1]);
         if (!i) return;
-        chain = chain.then(function () { return api('POST', '/api/settings', { key: p[0], value: i.value }); });
+        // checkbox 的 .value 恒为 'on'，得读 .checked，否则永远关不掉
+        var v = i.type === 'checkbox' ? String(i.checked) : i.value;
+        chain = chain.then(function () { return api('POST', '/api/settings', { key: p[0], value: v }); });
       });
       return chain;
     }, '设置已保存');

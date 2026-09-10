@@ -57,6 +57,8 @@ export const SETTINGS = {
   bootstrapMaxAgeDays: 'bootstrap.max_age_days',
   pendingWindowMax: 'pending_window.max_messages',
   codexSandboxMode: 'codex.sandbox_mode',
+  /** 告诉 agent 它在哪个群、可以自己发文件（决策 22，默认关） */
+  chatToolsEnabled: 'chat_tools.enabled',
 } as const;
 
 export function getBool(db: Db, key: string, def: boolean): boolean {

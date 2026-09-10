@@ -164,3 +164,44 @@ test('端到端：设置 bootstrap.enabled=false 时不注入历史', async () =
   const hist = adapter.received[0]!.context?.find((c) => c.kind === 'historical');
   assert.equal(hist, undefined, '关闭后不应注入');
 });
+
+test('端到端：chat_tools 默认关 —— agent 拿不到 chat_id（决策 21）', async () => {
+  const { db, channel, adapter, dispatcher } = setup({ reply: 'ok' });
+  bind(db, 'oc_a');
+  await dispatcher.handleInbound(inbound({ chatId: 'oc_a', text: '看看' }));
+  await waitFor(() => channel.sent.length > 0);
+  const blocks = adapter.received[0]!.context ?? [];
+  assert.equal(
+    blocks.some((c) => c.kind === 'instructions'),
+    false,
+    '默认不该注入 chat_delivery',
+  );
+  const all = blocks.map((c) => c.text).join('\n') + adapter.received[0]!.text;
+  assert.equal(all.includes('oc_a'), false, 'chat_id 不该泄露给 agent');
+});
+
+test('端到端：开了 chat_tools 才注入 chat_id 与发文件命令（决策 22）', async () => {
+  const { db, channel, adapter, dispatcher } = setup({ reply: 'ok' });
+  bind(db, 'oc_a');
+  setSetting(db, SETTINGS.chatToolsEnabled, 'true');
+  await dispatcher.handleInbound(inbound({ chatId: 'oc_a', text: '把报告发群里' }));
+  await waitFor(() => channel.sent.length > 0);
+  const block = adapter.received[0]!.context?.find((c) => c.kind === 'instructions');
+  assert.ok(block, '开启后应注入 chat_delivery');
+  assert.match(block!.text, /--chat-id oc_a/);
+  assert.match(block!.text, /--as bot/);
+  assert.match(block!.text, /自动/, '必须说明文字回复会自动送达，否则会重复发送');
+});
+
+test('端到端：chat_delivery 排在其他上下文之后，紧邻用户消息', async () => {
+  // 位置有意义：前面可能有 50 条 bootstrap 历史，指令放最前面会被冲淡。
+  const { db, channel, adapter, dispatcher } = setup({ reply: 'ok' });
+  bind(db, 'oc_a');
+  setSetting(db, SETTINGS.chatToolsEnabled, 'true');
+  channel.history = [{ id: 'm1', senderName: '李四', text: '早上的事', ts: Date.now() - 60_000 }];
+  await dispatcher.handleInbound(inbound({ chatId: 'oc_a', text: '看看' }));
+  await waitFor(() => channel.sent.length > 0);
+  const kinds = (adapter.received[0]!.context ?? []).map((c) => c.kind);
+  assert.ok(kinds.length >= 2, `应有多个上下文块，实际 ${kinds.join(',')}`);
+  assert.equal(kinds[kinds.length - 1], 'instructions', 'chat_delivery 应在最后');
+});

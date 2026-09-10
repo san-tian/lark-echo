@@ -1,6 +1,6 @@
 import { createLogger, type Logger } from './logger.ts';
 import { newTraceId } from './ids.ts';
-import { formatPendingWindow, formatHistorical } from './pending-window.ts';
+import { formatPendingWindow, formatHistorical, formatChatTools } from './pending-window.ts';
 import { decideInbound, chatIdOfKey, conversationKeyFor, sessionRefFor } from './router.ts';
 import { SessionQueue } from './queue.ts';
 import type { Channel } from './channel.ts';
@@ -161,9 +161,16 @@ export class Dispatcher {
       const { adapter, handle } = await this.driver.acquire(ref);
       this.driver.touch(ref);
       const bootstrap = await this.ensureBootstrap(msg, ref);
+      // 决策 22：开了才注入。默认关 —— 它把「你在某个群里」这件事告诉 agent，
+      // 与决策 21 的中性注入相反，只在用户明确要 agent 能自己发文件时才开。
+      const chatTools = getBool(this.db, SETTINGS.chatToolsEnabled, false)
+        ? formatChatTools(msg.conversationKey, chatId)
+        : undefined;
       const contextBlocks: ContextBlock[] = [
         ...(bootstrap ? [bootstrap] : []),
         ...(context ? [context] : []),
+        // 放最后：紧邻用户消息，最不容易被前面的长历史冲淡
+        ...(chatTools ? [chatTools] : []),
       ];
       const turn = await adapter.send(handle, {
         // 决策 21：以普通用户聊天的形式注入（用户名字），不提「飞书」，

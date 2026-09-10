@@ -66,6 +66,7 @@ export interface UiSettings {
   bootstrapMaxAgeDays: number;
   pendingWindowMax: number;
   codexSandboxMode: string;
+  chatToolsEnabled: boolean;
 }
 
 export interface UiState {
@@ -161,6 +162,7 @@ export class UiData {
         bootstrapMaxAgeDays: getInt(this.deps.db, SETTINGS.bootstrapMaxAgeDays, 7),
         pendingWindowMax: getInt(this.deps.db, SETTINGS.pendingWindowMax, 50),
         codexSandboxMode: getSetting(this.deps.db, SETTINGS.codexSandboxMode) ?? '',
+        chatToolsEnabled: getBool(this.deps.db, SETTINGS.chatToolsEnabled, false),
       },
       recentCwds: [...new Set(bindings.map((b) => b.cwd))],
       queue: {
