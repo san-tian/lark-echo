@@ -16,10 +16,30 @@ export interface Actor {
   name: string;
 }
 
+/** 已经落盘的附件（出站用，也可表示已下载的入站件） */
 export interface Attachment {
-  kind: 'image' | 'file';
+  kind: 'image' | 'file' | 'video';
   localPath: string;
   name: string;
+}
+
+/**
+ * 入站附件（决策 23）：事件里只有渠道侧的定位信息（飞书 `image_key` / `file_key`），
+ * **下载推迟到这一轮真要跑的时候**（dispatcher），否则群里每张图都会被拖下来。
+ */
+export interface InboundAttachment {
+  kind: 'image' | 'file' | 'video' | 'audio';
+  /** 渠道侧资源键 */
+  key: string;
+  name?: string;
+}
+
+/** 渠道把入站附件落到本地后的结果 */
+export interface DownloadedAttachment {
+  localPath: string;
+  name: string;
+  mimeType?: string;
+  bytes: number;
 }
 
 /** 入站消息（渠道无关的规范化形态） */
@@ -30,7 +50,7 @@ export interface InboundMessage {
   conversationKey: ConversationKey;
   actor: Actor;
   text: string;
-  attachments: Attachment[];
+  attachments: InboundAttachment[];
   ts: number;
   replyTo?: string;
   /** 是否 @ 了机器人（决定触发还是进 pendingWindow） */

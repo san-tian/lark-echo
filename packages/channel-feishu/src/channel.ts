@@ -1,12 +1,20 @@
+import { createWriteStream } from 'node:fs';
+import { rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import type { Readable } from 'node:stream';
 import {
   createLogger,
+  ensureDir,
+  paths,
   splitText,
   type Channel,
   type ChatInfo,
   type ChatMember,
+  type DownloadedAttachment,
   type HistoryMessage,
   type ConversationKey,
   type DoctorCheck,
+  type InboundAttachment,
   type InboundMessage,
   type Logger,
   type OutboundMessage,
@@ -28,7 +36,28 @@ export interface FeishuChannelOptions {
   chunkLimit?: number;
   /** 连接就绪超时 */
   connectTimeoutMs?: number;
+  /** 入站图片下载上限（飞书单图上限就是 10MB） */
+  maxImageBytes?: number;
+  /** 入站文件下载上限 */
+  maxFileBytes?: number;
 }
+
+/** `/im/v1/messages/:id/resources/:key` 的 `type` 取值 */
+const RESOURCE_TYPE: Record<InboundAttachment['kind'], string> = {
+  image: 'image',
+  file: 'file',
+  video: 'media',
+  audio: 'file',
+};
+
+const DEFAULT_MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+const DEFAULT_MAX_FILE_BYTES = 30 * 1024 * 1024;
+
+/** 附件名只用来拼路径，必须堵掉路径穿越与平台特殊字符 */
+const safeName = (name: string, fallback: string): string => {
+  const cleaned = name.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').replace(/^\.+/, '').trim();
+  return (cleaned.length > 0 ? cleaned : fallback).slice(0, 120);
+};
 
 interface FeishuApiError {
   code?: number;
@@ -135,6 +164,51 @@ export class FeishuChannel implements Channel {
       messageId = res.data?.message_id ?? messageId;
     }
     return { messageId };
+  }
+
+  /**
+   * 下载入站附件（决策 23）：落盘到 `~/.instead/media/<chatId>/`。
+   * 用流式写 + 字节计数，超限就中止并删掉半个文件 —— 不信任 `content-length`。
+   */
+  async downloadAttachment(
+    msg: InboundMessage,
+    att: InboundAttachment,
+  ): Promise<DownloadedAttachment | undefined> {
+    const messageId = msg.replyTo;
+    if (!messageId) return undefined;
+    const limit =
+      att.kind === 'image'
+        ? (this.opts.maxImageBytes ?? DEFAULT_MAX_IMAGE_BYTES)
+        : (this.opts.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES);
+    const chatId = msg.conversationKey.replace(/^feishu:chat:/, '');
+    const name = safeName(att.name ?? '', `${att.kind}_${att.key.slice(0, 8)}`);
+    const dir = ensureDir(join(paths.mediaDir(), chatId));
+    const localPath = join(dir, `${Date.now()}-${name}`);
+    try {
+      const res = await this.client.im.messageResource.get({
+        path: { message_id: messageId, file_key: att.key },
+        params: { type: RESOURCE_TYPE[att.kind] },
+      });
+      const headers = (res as { headers?: Record<string, unknown> }).headers;
+      const contentType = headers?.['content-type'];
+      const bytes = await writeCapped(res.getReadableStream(), localPath, limit);
+      this.logger.debug('attachment downloaded', { chatId, kind: att.kind, name, bytes });
+      return {
+        localPath,
+        name,
+        bytes,
+        ...(typeof contentType === 'string' ? { mimeType: contentType } : {}),
+      };
+    } catch (err) {
+      await rm(localPath, { force: true }).catch(() => undefined);
+      this.logger.warn('attachment download failed', {
+        chatId,
+        kind: att.kind,
+        name,
+        error: String(err),
+      });
+      return undefined;
+    }
   }
 
   /**
@@ -383,8 +457,38 @@ export class FeishuChannel implements Channel {
   }
 }
 
-/** `instead connect` 用：不建长连接，只用一次 API 调用验证凭据 */
-export async function verifyCredentials(
+/**
+ * 流式写文件 + 卡字节上限。超限就拆掉两端的流并报错（调用方负责删半成品）。
+ * 不信任 `content-length`：字节数只按实际收到的算。
+ */
+function writeCapped(stream: Readable, filePath: string, limit: number): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const out = createWriteStream(filePath);
+    let bytes = 0;
+    let settled = false;
+    const fail = (err: Error): void => {
+      if (settled) return;
+      settled = true;
+      stream.destroy();
+      out.destroy();
+      reject(err);
+    };
+    stream.on('data', (chunk: Buffer) => {
+      bytes += chunk.length;
+      if (bytes > limit) fail(new Error(`attachment exceeds ${limit} bytes`));
+    });
+    stream.on('error', (err: Error) => fail(err));
+    out.on('error', (err: Error) => fail(err));
+    out.on('finish', () => {
+      if (settled) return;
+      settled = true;
+      resolve(bytes);
+    });
+    stream.pipe(out);
+  });
+}
+
+/** `instead connect` 用：不建长连接，只用一次 API 调用验证凭据 */export async function verifyCredentials(
   appId: string,
   appSecret: string,
   domain: 'feishu' | 'lark' = 'feishu',

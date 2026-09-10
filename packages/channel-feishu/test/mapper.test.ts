@@ -1,6 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { extractText, toInboundMessage, toHistoryMessage } from '../src/mapper.ts';
+import {
+  extractAttachments,
+  extractText,
+  toHistoryMessage,
+  toInboundMessage,
+} from '../src/mapper.ts';
 
 const baseEvent = (overrides: {
   message?: Record<string, unknown>;
@@ -123,4 +128,56 @@ test('toHistoryMessage：文本/系统/空文本/机器人', () => {
 
   assert.equal(toHistoryMessage({ message_id: 'om_2', msg_type: 'system' }), undefined);
   assert.equal(toHistoryMessage({ msg_type: 'text', body: { content: '{}' } }), undefined);
+});
+
+/* ---------------- 决策 23：收集可下载的附件 ---------------- */
+
+test('图片/文件/语音/视频各自抽出资源键', () => {
+  assert.deepEqual(extractAttachments('image', JSON.stringify({ image_key: 'img_1' })), [
+    { kind: 'image', key: 'img_1' },
+  ]);
+  assert.deepEqual(
+    extractAttachments('file', JSON.stringify({ file_key: 'f_1', file_name: '报表.csv' })),
+    [{ kind: 'file', key: 'f_1', name: '报表.csv' }],
+  );
+  assert.deepEqual(extractAttachments('audio', JSON.stringify({ file_key: 'a_1' })), [
+    { kind: 'audio', key: 'a_1' },
+  ]);
+  assert.deepEqual(
+    extractAttachments('media', JSON.stringify({ file_key: 'v_1', image_key: 'cover_1' })),
+    [{ kind: 'video', key: 'v_1' }],
+  );
+});
+
+test('富文本里的 img 节点也算附件', () => {
+  const content = JSON.stringify({
+    content: [
+      [{ tag: 'text', text: '看这张' }],
+      [{ tag: 'img', image_key: 'img_a' }, { tag: 'img', image_key: 'img_b' }],
+    ],
+  });
+  assert.deepEqual(extractAttachments('post', content), [
+    { kind: 'image', key: 'img_a' },
+    { kind: 'image', key: 'img_b' },
+  ]);
+});
+
+test('纯文本 / 表情 / 坏 JSON 都不产出附件', () => {
+  assert.deepEqual(extractAttachments('text', JSON.stringify({ text: 'hi' })), []);
+  assert.deepEqual(extractAttachments('sticker', JSON.stringify({ file_key: 's_1' })), []);
+  assert.deepEqual(extractAttachments('image', 'not json'), []);
+});
+
+test('toInboundMessage 把附件挂到消息上（文本占位符保留）', () => {
+  const msg = toInboundMessage(
+    baseEvent({
+      message: {
+        message_type: 'image',
+        content: JSON.stringify({ image_key: 'img_1' }),
+      },
+    }),
+    {},
+  );
+  assert.equal(msg?.text, '[图片]', '占位符保留：写进 pendingWindow/历史时得看得见');
+  assert.deepEqual(msg?.attachments, [{ kind: 'image', key: 'img_1' }]);
 });

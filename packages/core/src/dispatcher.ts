@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import { createLogger, type Logger } from './logger.ts';
 import { newTraceId } from './ids.ts';
 import { formatPendingWindow, formatHistorical, formatChatTools } from './pending-window.ts';
@@ -160,6 +161,7 @@ export class Dispatcher {
     try {
       const { adapter, handle } = await this.driver.acquire(ref);
       this.driver.touch(ref);
+      const media = await this.resolveAttachments(msg);
       const bootstrap = await this.ensureBootstrap(msg, ref);
       // 决策 22：开了才注入。默认关 —— 它把「你在某个群里」这件事告诉 agent，
       // 与决策 21 的中性注入相反，只在用户明确要 agent 能自己发文件时才开。
@@ -175,9 +177,10 @@ export class Dispatcher {
       const turn = await adapter.send(handle, {
         // 决策 21：以普通用户聊天的形式注入（用户名字），不提「飞书」，
         // 避免触发 agent 主动调 lark-cli 回群
-        text: `[${msg.actor.name}] ${msg.text}`,
+        text: `[${msg.actor.name}] ${msg.text}${media.note}`,
         conversationKey: msg.conversationKey,
         context: contextBlocks,
+        ...(media.images.length ? { images: media.images } : {}),
       });
       turnId = turn.turnId;
       const off = turn.onEvent((event) => {
@@ -210,6 +213,60 @@ export class Dispatcher {
         () => undefined,
       );
     }
+  }
+
+  /**
+   * 决策 23：把入站附件拖下来。
+   * - 图片进 `UserMessage.images`（三个 adapter 都已支持：pi 塞 RPC、codex 落临时文件、claude 同理）
+   * - 其余只把落盘路径写进正文 —— agent 用自己的读文件工具就能拿到内容，
+   *   PDF/CSV/日志这类尤其有用。不搬进 cwd：那是绑定目录，不该被外部输入污染。
+   * - 任何一条失败只丢它自己（回一行说明），不拖垮这一轮
+   */
+  private async resolveAttachments(
+    msg: InboundMessage,
+  ): Promise<{ images: { data: string; mimeType: string }[]; note: string }> {
+    const images: { data: string; mimeType: string }[] = [];
+    const notes: string[] = [];
+    if (msg.attachments.length === 0 || !this.channel.downloadAttachment) {
+      return { images, note: '' };
+    }
+    for (const att of msg.attachments) {
+      const saved = await this.channel
+        .downloadAttachment(msg, att)
+        .catch((err: unknown) => {
+          this.logger.warn('attachment download threw', { kind: att.kind, error: String(err) });
+          return undefined;
+        });
+      if (!saved) {
+        notes.push(`[附件未能下载：${att.kind}]`);
+        continue;
+      }
+      if (att.kind === 'image') {
+        try {
+          const buf = await readFile(saved.localPath);
+          images.push({
+            data: buf.toString('base64'),
+            mimeType: saved.mimeType ?? 'image/png',
+          });
+          continue;
+        } catch (err) {
+          this.logger.warn('attachment read failed', {
+            path: saved.localPath,
+            error: String(err),
+          });
+        }
+      }
+      const label =
+        att.kind === 'image'
+          ? '图片'
+          : att.kind === 'audio'
+            ? '语音'
+            : att.kind === 'video'
+              ? '视频'
+              : '文件';
+      notes.push(`[${label}: ${saved.name} 已保存到 ${saved.localPath}]`);
+    }
+    return { images, note: notes.length > 0 ? `\n${notes.join('\n')}` : '' };
   }
 
   /**

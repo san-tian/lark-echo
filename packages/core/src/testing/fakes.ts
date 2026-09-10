@@ -5,6 +5,8 @@ import type {
   AgentSessionHandle,
   ContextBlock,
   ConversationKey,
+  DownloadedAttachment,
+  InboundAttachment,
   InboundMessage,
   OutboundMessage,
   SessionRef,
@@ -32,6 +34,12 @@ export class FakeChannel implements Channel {
   chats: ChatInfo[] = [];
   /** bootstrapHistory 用：预置的历史消息 */
   history: HistoryMessage[] = [];
+  /**
+   * 决策 23 测试用：按资源键预置「已下载」的结果；没预置 = 下载失败。
+   * 真下载（写到哪个目录、限额）由 channel-feishu 自己覆。
+   */
+  readonly downloads = new Map<string, DownloadedAttachment>();
+  downloadCount = 0;
   failNextSend = false;
   private onInbound?: (msg: InboundMessage) => void;
 
@@ -58,6 +66,13 @@ export class FakeChannel implements Channel {
   }
   async listChats(): Promise<ChatInfo[]> {
     return this.chats;
+  }
+  async downloadAttachment(
+    _msg: InboundMessage,
+    att: InboundAttachment,
+  ): Promise<DownloadedAttachment | undefined> {
+    this.downloadCount += 1;
+    return this.downloads.get(att.key);
   }
   async fetchHistory(_chatId: string, limit: number): Promise<HistoryMessage[]> {
     return this.history.slice(-limit);

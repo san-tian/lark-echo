@@ -1,4 +1,11 @@
-import type { ChannelId, ConversationKey, InboundMessage, OutboundMessage } from './types.ts';
+import type {
+  ChannelId,
+  ConversationKey,
+  DownloadedAttachment,
+  InboundAttachment,
+  InboundMessage,
+  OutboundMessage,
+} from './types.ts';
 
 export interface OutboundResult {
   /** 渠道侧消息 id，用于审计与出站幂等核对 */
@@ -55,6 +62,14 @@ export interface Channel {
   listMembers?(chatId: string): Promise<ChatMember[]>;
   /** 拉取群历史（bootstrapHistory，§6.2）；返回 oldest→newest */
   fetchHistory?(chatId: string, limit: number, maxAgeDays: number): Promise<HistoryMessage[]>;
+  /**
+   * 下载一条入站附件（决策 23）。失败返回 `undefined` —— 附件是附带信息，
+   * 不该把这一轮拖垮。
+   */
+  downloadAttachment?(
+    msg: InboundMessage,
+    att: InboundAttachment,
+  ): Promise<DownloadedAttachment | undefined>;
   doctor(): Promise<DoctorCheck[]>;
 }
 

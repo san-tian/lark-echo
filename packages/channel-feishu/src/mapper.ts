@@ -1,4 +1,4 @@
-import type { HistoryMessage, InboundMessage } from '@instead/core';
+import type { HistoryMessage, InboundAttachment, InboundMessage } from '@instead/core';
 
 /** 飞书 im.message.receive_v1 事件（只声明我们用到的字段） */
 export interface FeishuMessageEvent {
@@ -58,7 +58,7 @@ export function toInboundMessage(
     conversationKey: `feishu:chat:${chatId}`,
     actor: { id: senderId, name: opts.senderName ?? shortId(senderId) },
     text,
-    attachments: [],
+    attachments: extractAttachments(message?.message_type ?? '', message?.content ?? ''),
     ts: Number(message?.create_time ?? Date.now()),
     mentioned,
     ...(messageId ? { replyTo: messageId } : {}),
@@ -107,6 +107,56 @@ function extractPostText(content: Record<string, unknown> | undefined): string {
     );
   }
   return parts.join('\n');
+}
+
+/**
+ * 从消息体里抽出「可下载的附件」（决策 23）。
+ * 与 `extractText` 分开：文本仍保留 `[图片]` 这类占位符（写进 pendingWindow / 历史时
+ * 至少要看得见发生过什么），这里只负责收集渠道侧的资源键。
+ */
+export function extractAttachments(
+  messageType: string,
+  rawContent: string,
+): InboundAttachment[] {
+  const content = safeParse(rawContent);
+  if (!content) return [];
+  const key = (v: unknown): string | undefined =>
+    typeof v === 'string' && v.trim() ? v.trim() : undefined;
+
+  if (messageType === 'image') {
+    const k = key(content.image_key);
+    return k ? [{ kind: 'image', key: k }] : [];
+  }
+  if (messageType === 'file') {
+    const k = key(content.file_key);
+    const name = key(content.file_name);
+    return k ? [{ kind: 'file', key: k, ...(name ? { name } : {}) }] : [];
+  }
+  if (messageType === 'audio') {
+    const k = key(content.file_key);
+    return k ? [{ kind: 'audio', key: k }] : [];
+  }
+  if (messageType === 'media') {
+    // 视频：file_key 是本体，image_key 是封面（这里只要本体）
+    const k = key(content.file_key);
+    const name = key(content.file_name);
+    return k ? [{ kind: 'video', key: k, ...(name ? { name } : {}) }] : [];
+  }
+  if (messageType === 'post') {
+    const out: InboundAttachment[] = [];
+    for (const line of Array.isArray(content.content) ? (content.content as unknown[]) : []) {
+      if (!Array.isArray(line)) continue;
+      for (const node of line) {
+        const n = node as { tag?: string; image_key?: string; file_key?: string; file_name?: string };
+        if (n.tag !== 'img' && n.tag !== 'media') continue;
+        const k = key(n.image_key ?? n.file_key);
+        if (!k) continue;
+        out.push({ kind: n.tag === 'img' ? 'image' : 'video', key: k });
+      }
+    }
+    return out;
+  }
+  return [];
 }
 
 function stripMentionKeys(text: string, mentions?: Array<{ key?: string }>): string {

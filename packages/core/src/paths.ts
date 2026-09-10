@@ -36,6 +36,8 @@ export const paths = {
   pidFile: () => join(insteadHome(), 'daemon.pid'),
   logFile: () => join(insteadHome(), 'daemon.log'),
   uiToken: () => join(insteadHome(), 'ui-token'),
+  /** 入站附件落盘位置（决策 23）：`~/.instead/media/<chatId>/` */
+  mediaDir: () => join(insteadHome(), 'media'),
   inbox: (msgId: string) => join(insteadHome(), 'feishu-inbox', msgId),
 };
 
