@@ -1,5 +1,5 @@
 import { createWriteStream } from 'node:fs';
-import { rm } from 'node:fs/promises';
+import { rm, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Readable } from 'node:stream';
 import {
@@ -7,6 +7,7 @@ import {
   ensureDir,
   paths,
   splitText,
+  type Attachment,
   type Channel,
   type ChatInfo,
   type ChatMember,
@@ -144,6 +145,13 @@ export class FeishuChannel implements Channel {
 
   async send(msg: OutboundMessage): Promise<OutboundResult> {
     const chatId = msg.conversationKey.replace(/^feishu:chat:/, '');
+    if (msg.attachments?.length) {
+      let lastId = '';
+      for (const att of msg.attachments) {
+        lastId = await this.sendMedia(chatId, att, msg.replyTo);
+      }
+      return { messageId: lastId };
+    }
     const chunks = splitText(msg.text, this.opts.chunkLimit ?? 4000);
     let messageId = '';
     for (const chunk of chunks) {
@@ -164,6 +172,57 @@ export class FeishuChannel implements Channel {
       messageId = res.data?.message_id ?? messageId;
     }
     return { messageId };
+  }
+
+  /**
+   * 发一个附件（决策 23）：先传资源换 key，再发消息。
+   * 图走 `im/v1/images` + `msg_type: image`；其余一律当文件（`im/v1/files` + `msg_type: file`）。
+   * 视频在飞书要封面 `image_key`（lark-cli 的 `--video-cover`），拿不到就先当文件发。
+   */
+  private async sendMedia(
+    chatId: string,
+    att: Attachment,
+    replyTo?: string,
+  ): Promise<string> {
+    const data = await readFile(att.localPath);
+    const msgType = mediaMsgType(att.kind);
+    const content = await this.uploadMedia(att, data, msgType);
+    const res = replyTo
+      ? await this.client.im.message.reply({
+          path: { message_id: replyTo },
+          data: { content, msg_type: msgType },
+        })
+      : await this.client.im.message.create({
+          params: { receive_id_type: 'chat_id' },
+          data: { receive_id: chatId, msg_type: msgType, content },
+        });
+    const err = res as FeishuApiError;
+    if (err.code !== undefined && err.code !== 0) {
+      throw new Error(`feishu media send failed: code=${err.code} msg=${err.msg ?? ''}`);
+    }
+    return res.data?.message_id ?? '';
+  }
+
+  /** 传资源并拼出消息体（`content` 就是发出去的那串 JSON） */
+  private async uploadMedia(
+    att: Attachment,
+    data: Buffer,
+    msgType: 'image' | 'file',
+  ): Promise<string> {
+    if (msgType === 'image') {
+      const res = (await this.client.im.image.create({
+        data: { image_type: 'message', image: data },
+      })) as { msg?: string; image_key?: string; data?: { image_key?: string } };
+      const key = res.image_key ?? res.data?.image_key;
+      if (!key) throw new Error(`feishu image upload failed: ${res.msg ?? 'no image_key'}`);
+      return mediaContent('image', key);
+    }
+    const res = (await this.client.im.file.create({
+      data: { file_type: 'stream', file_name: att.name, file: data },
+    })) as { msg?: string; file_key?: string; data?: { file_key?: string } };
+    const key = res.file_key ?? res.data?.file_key;
+    if (!key) throw new Error(`feishu file upload failed: ${res.msg ?? 'no file_key'}`);
+    return mediaContent('file', key);
   }
 
   /**
@@ -456,6 +515,16 @@ export class FeishuChannel implements Channel {
     }
   }
 }
+
+/**
+ * 附件 → 飞书 `msg_type` / 消息体。纯函数，便于测试。
+ * 出站只分图和文件：视频要封面 `image_key`，拿不到就先当文件发。
+ */
+export const mediaMsgType = (kind: Attachment['kind']): 'image' | 'file' =>
+  kind === 'image' ? 'image' : 'file';
+
+export const mediaContent = (kind: Attachment['kind'], key: string): string =>
+  JSON.stringify(kind === 'image' ? { image_key: key } : { file_key: key });
 
 /**
  * 流式写文件 + 卡字节上限。超限就拆掉两端的流并报错（调用方负责删半成品）。

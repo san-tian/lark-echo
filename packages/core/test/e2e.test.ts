@@ -180,7 +180,7 @@ test('端到端：chat_tools 默认关 —— agent 拿不到 chat_id（决策 2
   assert.equal(all.includes('oc_a'), false, 'chat_id 不该泄露给 agent');
 });
 
-test('端到端：开了 chat_tools 才注入 chat_id 与发文件命令（决策 22）', async () => {
+test('端到端：开了 chat_tools 才注入发文件约定，且不泄露 chat_id（决策 22/23）', async () => {
   const { db, channel, adapter, dispatcher } = setup({ reply: 'ok' });
   bind(db, 'oc_a');
   setSetting(db, SETTINGS.chatToolsEnabled, 'true');
@@ -188,9 +188,10 @@ test('端到端：开了 chat_tools 才注入 chat_id 与发文件命令（决�
   await waitFor(() => channel.sent.length > 0);
   const block = adapter.received[0]!.context?.find((c) => c.kind === 'instructions');
   assert.ok(block, '开启后应注入 chat_delivery');
-  assert.match(block!.text, /--chat-id oc_a/);
-  assert.match(block!.text, /--as bot/);
+  assert.match(block!.text, /MEDIA:<相对当前工作目录的路径>/, '要教它 MEDIA 写法');
+  assert.match(block!.text, /不要[^\n]*消息发送工具/, '要先把重复回复那条路堵死');
   assert.match(block!.text, /自动/, '必须说明文字回复会自动送达，否则会重复发送');
+  assert.equal(block!.text.includes('oc_a'), false, '决策 23：上传收回到 instead，不再需要 chat_id');
 });
 
 test('端到端：chat_delivery 排在其他上下文之后，紧邻用户消息', async () => {

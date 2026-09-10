@@ -1,4 +1,4 @@
-import type { OutboundMessage } from '../types.ts';
+import type { Attachment, OutboundMessage } from '../types.ts';
 import { asRow, asRows, type Db } from './db.ts';
 
 export type OutboundStatus = 'pending' | 'sent' | 'failed';
@@ -9,6 +9,8 @@ export interface OutboundRecord {
   seq: number;
   chatId: string;
   text: string;
+  /** 附件（决策 23）；与 text 互斥但不强制 —— 都是「这一条要发出去的东西」 */
+  attachments?: Attachment[];
   replyTo?: string;
   status: OutboundStatus;
   attempts: number;
@@ -27,6 +29,7 @@ interface OutboundRow {
   attempts: number;
   sent_msg_id: string | null;
   created_at: number;
+  media: string | null;
 }
 
 const toRecord = (r: OutboundRow): OutboundRecord => ({
@@ -35,12 +38,24 @@ const toRecord = (r: OutboundRow): OutboundRecord => ({
   seq: Number(r.seq),
   chatId: r.chat_id,
   text: r.text,
+  ...(parseMedia(r.media) ? { attachments: parseMedia(r.media)! } : {}),
   replyTo: r.reply_to ?? undefined,
   status: r.status as OutboundStatus,
   attempts: Number(r.attempts),
   sentMsgId: r.sent_msg_id ?? undefined,
   createdAt: Number(r.created_at),
 });
+
+/** 坏 JSON 当作没附件：宁可少发一条，也不能让整个出站队列卡死 */
+function parseMedia(raw: string | null): Attachment[] | undefined {
+  if (!raw) return undefined;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) && parsed.length > 0 ? (parsed as Attachment[]) : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 /**
  * 出站对称落盘 + 幂等（缺口 B）。飞书没有幂等键，靠 `UNIQUE(turn_id, seq)` 保证
@@ -54,9 +69,17 @@ export function enqueueOutbound(
   const chatId = msg.conversationKey.replace(/^feishu:chat:/, '');
   db.prepare(
     `INSERT OR IGNORE INTO outbound_messages
-       (turn_id, seq, chat_id, text, reply_to, status, attempts, created_at)
-     VALUES (?, ?, ?, ?, ?, 'pending', 0, ?)`,
-  ).run(msg.turnId, msg.seq, chatId, msg.text, msg.replyTo ?? null, now);
+       (turn_id, seq, chat_id, text, reply_to, status, attempts, created_at, media)
+     VALUES (?, ?, ?, ?, ?, 'pending', 0, ?, ?)`,
+  ).run(
+    msg.turnId,
+    msg.seq,
+    chatId,
+    msg.text,
+    msg.replyTo ?? null,
+    now,
+    msg.attachments?.length ? JSON.stringify(msg.attachments) : null,
+  );
   const row = asRow<OutboundRow>(
     db.prepare('SELECT * FROM outbound_messages WHERE turn_id = ? AND seq = ?').get(msg.turnId, msg.seq),
   );
@@ -67,8 +90,10 @@ export function listPendingOutbound(db: Db, limit = 50): OutboundRecord[] {
   return asRows<OutboundRow>(
     db
       .prepare(
+        // `created_at` 只到毫秒，同一个 turn 的多个分片基本同刻 —— 不带上 id 排序就
+        // 可能乱序发出（分片顺序 / 附件排在文本之后都靠它）
         `SELECT * FROM outbound_messages WHERE status = 'pending'
-         ORDER BY created_at LIMIT ?`,
+         ORDER BY created_at, id LIMIT ?`,
       )
       .all(limit),
   ).map(toRecord);

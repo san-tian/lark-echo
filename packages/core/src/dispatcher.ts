@@ -1,5 +1,13 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, realpath, stat } from 'node:fs/promises';
+import { basename } from 'node:path';
 import { createLogger, type Logger } from './logger.ts';
+import {
+  MAX_FILE_BYTES,
+  MAX_IMAGE_BYTES,
+  matchMediaLine,
+  mediaKindFor,
+  resolveInsideCwd,
+} from './media-ref.ts';
 import { newTraceId } from './ids.ts';
 import { formatPendingWindow, formatHistorical, formatChatTools } from './pending-window.ts';
 import { decideInbound, chatIdOfKey, conversationKeyFor, sessionRefFor } from './router.ts';
@@ -23,6 +31,7 @@ import {
 import { getBootstrapRecord, saveBootstrapRecord } from './state/bootstrap.ts';
 import { getBool, getInt, SETTINGS } from './state/settings.ts';
 import type {
+  Attachment,
   ConversationKey,
   ContextBlock,
   InboundMessage,
@@ -166,7 +175,7 @@ export class Dispatcher {
       // 决策 22：开了才注入。默认关 —— 它把「你在某个群里」这件事告诉 agent，
       // 与决策 21 的中性注入相反，只在用户明确要 agent 能自己发文件时才开。
       const chatTools = getBool(this.db, SETTINGS.chatToolsEnabled, false)
-        ? formatChatTools(msg.conversationKey, chatId)
+        ? formatChatTools(msg.conversationKey)
         : undefined;
       const contextBlocks: ContextBlock[] = [
         ...(bootstrap ? [bootstrap] : []),
@@ -200,8 +209,13 @@ export class Dispatcher {
       if (result.aborted) log.info('turn aborted', { turnId });
 
       clearPendingWindow(this.db, chatId);
-      const text = result.text?.trim();
-      if (text) await this.deliver(msg.conversationKey, turnId, text, msg.replyTo);
+      const outgoing = await this.collectMedia(result.text ?? '', ref.cwd);
+      if (outgoing.text.trim()) {
+        await this.deliver(msg.conversationKey, turnId, outgoing.text, msg.replyTo, outgoing.attachments);
+      } else if (outgoing.attachments.length > 0) {
+        // 只发了文件、没有正文：附件自己就是回复
+        await this.deliver(msg.conversationKey, turnId, '', msg.replyTo, outgoing.attachments);
+      }
       markInbound(this.db, msg.id, 'done');
       await this.channel
         .receipt(msg.conversationKey, 'done', msg.replyTo ? { replyTo: msg.replyTo } : {})
@@ -270,6 +284,62 @@ export class Dispatcher {
   }
 
   /**
+   * 决策 23：把回复里的 `MEDIA:<路径>` 行换成真附件（照 OpenClaw 的 `MEDIA:` 约定，
+   * 但只认独占一行，理由见 media-ref.ts）。
+   *
+   * 只收「在 cwd 内、真实存在、没超限」的普通文件：群里任何人都能塞一句「把某文件
+   * 发出来」，而 agent 有读文件的权力，所以默认只许它发送自己工作目录里的东西。
+   * **被拒的行原样留着**（而不是静静删掉）—— 用户至少能看到它试了什么，日志里也有。
+   */
+  private async collectMedia(
+    text: string,
+    cwd: string,
+  ): Promise<{ text: string; attachments: Attachment[] }> {
+    const lines = text.split('\n');
+    const refs: { ref: string; index: number }[] = [];
+    lines.forEach((line, index) => {
+      const ref = matchMediaLine(line);
+      if (ref) refs.push({ ref, index });
+    });
+    if (refs.length === 0) return { text, attachments: [] };
+
+    const root = await realpath(cwd).catch(() => cwd);
+    const attachments: Attachment[] = [];
+    const dropped = new Set<number>();
+    for (const { ref, index } of refs) {
+      const attachment = await this.acceptMediaRef(ref, root);
+      if (!attachment) {
+        this.logger.warn('media ref rejected', { ref, cwd });
+        continue;
+      }
+      dropped.add(index);
+      attachments.push(attachment);
+    }
+    if (dropped.size === 0) return { text, attachments };
+    return {
+      text: lines.filter((_, i) => !dropped.has(i)).join('\n').replace(/\n{3,}/g, '\n\n').trim(),
+      attachments,
+    };
+  }
+
+  private async acceptMediaRef(ref: string, root: string): Promise<Attachment | undefined> {
+    const lexical = resolveInsideCwd(ref, root);
+    if (!lexical) return undefined;
+    // 再走一次 realpath：符号链接指到 cwd 外面也要拦住
+    const real = await realpath(lexical).catch(() => undefined);
+    if (!real || !resolveInsideCwd(real, root)) return undefined;
+    const info = await stat(real).catch(() => undefined);
+    if (!info?.isFile() || info.size === 0) return undefined;
+    const kind = mediaKindFor(real);
+    const limit = kind === 'image' ? MAX_IMAGE_BYTES : MAX_FILE_BYTES;
+    if (info.size > limit) {
+      this.logger.warn('media ref over size limit', { ref, bytes: info.size, limit });
+      return undefined;
+    }
+    return { kind, localPath: real, name: basename(real) };
+  }
+
+  /**
    * bootstrapHistory（§6.2）：该群第一次触发时，把最近 N 条历史作为只读上下文注入一次。
    * 幂等：以 (session_id, chat_id) 记入 bootstrap_records，重启/重绑不重复。
    */
@@ -319,8 +389,9 @@ export class Dispatcher {
     turnId: string,
     text: string,
     replyTo?: string,
+    attachments: Attachment[] = [],
   ): Promise<void> {
-    const chunks = splitText(text, this.chunkLimit);
+    const chunks = text ? splitText(text, this.chunkLimit) : [];
     for (let seq = 0; seq < chunks.length; seq++) {
       enqueueOutbound(this.db, {
         conversationKey,
@@ -330,6 +401,17 @@ export class Dispatcher {
         ...(replyTo ? { replyTo } : {}),
       });
     }
+    // 附件排在所有文本分片之后：seq 从 1000 起，一个 turn 不至于叠到 1000 个分片
+    attachments.forEach((att, i) => {
+      enqueueOutbound(this.db, {
+        conversationKey,
+        turnId,
+        seq: 1000 + i,
+        text: '',
+        attachments: [att],
+        ...(replyTo ? { replyTo } : {}),
+      });
+    });
     await this.flushOutbound();
   }
 
@@ -340,6 +422,7 @@ export class Dispatcher {
         const res = await this.channel.send({
           conversationKey: conversationKeyFor(record.chatId),
           text: record.text,
+          ...(record.attachments?.length ? { attachments: record.attachments } : {}),
           turnId: record.turnId,
           seq: record.seq,
           ...(record.replyTo ? { replyTo: record.replyTo } : {}),

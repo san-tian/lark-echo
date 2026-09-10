@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS outbound_messages (
   attempts   INTEGER NOT NULL DEFAULT 0,
   sent_msg_id TEXT,
   created_at INTEGER NOT NULL,
+  media      TEXT,                         -- 附件（决策 23）：Attachment[] 的 JSON，文本消息为 NULL
   UNIQUE(turn_id, seq)                     -- 出站幂等（缺口 B）
 );
 CREATE INDEX IF NOT EXISTS idx_outbound_pending ON outbound_messages(status, created_at);
@@ -96,7 +97,25 @@ export function openDb(file: string = paths.stateDb()): Db {
   db.exec('PRAGMA foreign_keys = ON;');
   db.exec('PRAGMA busy_timeout = 5000;');
   db.exec(SCHEMA);
+  migrate(db);
   return db;
+}
+
+/**
+ * 幂等补列。SQLite 的 `ALTER TABLE ADD COLUMN` 重复执行会报错，这里靠 try/catch
+ * 吞掉「已存在」——新建库由 SCHEMA 直接带上，老库走这里补（§11：不做版本号迁移框架，
+ * 只有这种加列的小改动时才不需要）。
+ */
+function ensureColumn(db: Db, table: string, ddl: string): void {
+  try {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
+  } catch {
+    /* 已经有了 */
+  }
+}
+
+function migrate(db: Db): void {
+  ensureColumn(db, 'outbound_messages', 'media TEXT');
 }
 
 export function closeDb(db: Db): void {

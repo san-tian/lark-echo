@@ -7,6 +7,7 @@ export * from './session-driver.ts';
 export * from './router.ts';
 export * from './queue.ts';
 export * from './pending-window.ts';
+export * from './media-ref.ts';
 export * from './dispatcher.ts';
 export * from './credentials.ts';
 export * from './state/db.ts';

@@ -618,8 +618,9 @@ function renderSettings() {
     '<fieldset><legend>让 agent 自己发文件</legend>' +
       '<div class="field"><label class="row" for="s-chat-tools">' +
         '<input type="checkbox" id="s-chat-tools"' + (st.chatToolsEnabled ? ' checked' : '') + '>' +
-        '<span>告诉 agent 它在哪个群，允许它用 lark-cli 发文件</span></label>' +
-        '<div class="hint">开了之后 agent 会知道当前 chat_id，可以自己发图片和文件（以机器人身份）。' +
+        '<span>允许 agent 把文件发到对话方（写一行 <code>MEDIA:&lt;路径&gt;</code>）</span></label>' +
+        '<div class="hint">开了之后 agent 只需要在回复里单独写一行 <code>MEDIA:相对当前工作目录的路径</code>，'
+        + 'instead 会自己上传并以机器人身份发出（不让它拼 lark-cli 命令，也不用知道 chat_id）。' +
         '文字回复仍然由 instead 自动送达，注入的说明里明确要求它不要重复发送。<br>' +
         '默认关闭：把「你在群里」这件事告诉 agent，它有时会顺手调 lark-cli 回消息，' +
         '导致群里收到两条重复。只在确实需要 agent 发文件时开。</div></div></fieldset>' +
