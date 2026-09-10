@@ -2,6 +2,7 @@ import { createWriteStream, writeFileSync, unlinkSync } from 'node:fs';
 import {
   createLogger,
   ensureHome,
+  pruneMedia,
   getSetting,
   listCredentials,
   loadCredential,
@@ -40,6 +41,10 @@ export async function runDaemon(): Promise<void> {
     logger.error('credential file missing or unreadable', { appId });
     process.exit(1);
   }
+
+  // 决策 23：入站附件会一直堆在 ~/.instead/media，启动时扫一次旧的
+  const pruned = await pruneMedia();
+  if (pruned > 0) logger.info('pruned stale inbound attachments', { count: pruned });
 
   const db = openDb();
   // 防御：清掉陈旧 socket（上次异常退出时可能没 unlink）
