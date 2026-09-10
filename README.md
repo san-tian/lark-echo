@@ -1,11 +1,11 @@
-# Lark Echo
+# Anylark
 
 把飞书群聊接到你本地的 agent 会话上。
 
 在群里 @机器人 说话，就等于直接对某一条 agent 会话说话；会话的历史仍然留在你自己的机器上，终端和飞书只是它的两个视图。
 
 ```
-飞书开放平台 ──WebSocket 长连接──> lark-echo daemon ──本地 IPC──> agent 进程
+飞书开放平台 ──WebSocket 长连接──> anylark daemon ──本地 IPC──> agent 进程
                                         │
                                         └─ 绑定 / 路由 / 串行队列 / 持久入站出站
 ```
@@ -38,7 +38,7 @@
 - `packages/daemon` — 本地 IPC（Unix socket + JSONL）、会话池、idle 回收
 - `packages/adapter-pi` — `pi --mode rpc` 子进程驱动
 - `packages/channel-feishu` — 飞书 WebSocket 长连接渠道、mention 门控、4000 字分片
-- `packages/cli` — `lark-echo` 命令行
+- `packages/cli` — `anylark` 命令行
 
 下一步（M0b）：一次性码的群侧入口、租约、多群播报、转录监听器、`/feishu-*` 会话内命令。
 
@@ -71,10 +71,10 @@ npm run typecheck
 
 ```bash
 npm install
-npx lark-echo connect <app_id>   # 粘贴 app secret（TTY 静默输入）
-npx lark-echo doctor             # 体检：凭据 / 权限 / 长连接
-npx lark-echo daemon start
-npx lark-echo ui                 # 控制台：选群 / 目录 / 会话 / 模型，点绑定
+npx anylark connect <app_id>   # 粘贴 app secret（TTY 静默输入）
+npx anylark doctor             # 体检：凭据 / 权限 / 长连接
+npx anylark daemon start
+npx anylark ui                 # 控制台：选群 / 目录 / 会话 / 模型，点绑定
 ```
 
 绑定后，在群里 @机器人 即可对话。

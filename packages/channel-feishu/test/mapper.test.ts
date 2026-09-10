@@ -35,7 +35,7 @@ test('@机器人时 mentioned=true，并从正文里剥掉 mention key', () => {
     baseEvent({
       message: {
         content: JSON.stringify({ text: '@_user_1 帮我看看' }),
-        mentions: [{ key: '@_user_1', id: { open_id: 'ou_bot' }, name: 'Lark Echo' }],
+        mentions: [{ key: '@_user_1', id: { open_id: 'ou_bot' }, name: 'Anylark' }],
       },
     }),
     { botOpenId: 'ou_bot' },

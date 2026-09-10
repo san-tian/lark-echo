@@ -26,7 +26,7 @@ import {
   type Logger,
   type MirrorMode,
   type ModelInfo,
-} from '@lark-echo/core';
+} from '@anylark/core';
 import { readdir, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';

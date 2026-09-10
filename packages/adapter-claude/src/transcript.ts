@@ -13,7 +13,7 @@ import { createReadStream, existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
-import type { HistoryEntry } from '@lark-echo/core';
+import type { HistoryEntry } from '@anylark/core';
 
 export interface TranscriptRaw {
   type?: string;

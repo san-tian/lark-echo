@@ -27,7 +27,7 @@ import {
   type Db,
   type Logger,
   type MirrorMode,
-} from '@lark-echo/core';
+} from '@anylark/core';
 import { IpcServer, type IpcParams } from './ipc.ts';
 import { SessionPool } from './session-pool.ts';
 import { UiData } from './ui-data.ts';

@@ -1,6 +1,6 @@
 import { chmodSync, unlinkSync } from 'node:fs';
 import { createServer, connect, type Server, type Socket } from 'node:net';
-import { createLogger, type Logger } from '@lark-echo/core';
+import { createLogger, type Logger } from '@anylark/core';
 
 export type IpcParams = Record<string, unknown>;
 

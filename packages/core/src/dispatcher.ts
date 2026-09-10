@@ -94,7 +94,7 @@ export class Dispatcher {
       log.info('inbound to unbound chat');
       await this.reply(
         msg.conversationKey,
-        '本群未绑定任何会话。请在终端执行 lark-echo bind，或在 agent 会话中完成绑定。',
+        '本群未绑定任何会话。请在终端执行 anylark bind，或在 agent 会话中完成绑定。',
       );
       markInbound(this.db, msg.id, 'done');
       return;

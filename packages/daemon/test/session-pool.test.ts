@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { FakeAdapter } from '@lark-echo/core/testing';
-import type { SessionRef } from '@lark-echo/core';
+import { FakeAdapter } from '@anylark/core/testing';
+import type { SessionRef } from '@anylark/core';
 import { SessionPool } from '../src/session-pool.ts';
 
 const ref = (sessionId = 'sess-1'): SessionRef => ({

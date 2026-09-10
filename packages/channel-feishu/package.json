@@ -1,5 +1,5 @@
 {
-  "name": "@lark-echo/channel-feishu",
+  "name": "@anylark/channel-feishu",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -7,7 +7,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@lark-echo/core": "0.0.1",
+    "@anylark/core": "0.0.1",
     "@larksuiteoapi/node-sdk": "^1.73.3"
   }
 }

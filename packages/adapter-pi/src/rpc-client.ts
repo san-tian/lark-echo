@@ -1,5 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { createLogger, type Logger } from '@lark-echo/core';
+import { createLogger, type Logger } from '@anylark/core';
 
 export interface PiRpcOptions {
   command?: string;

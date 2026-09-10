@@ -18,7 +18,7 @@ import {
   type TurnHandle,
   type TurnResult,
   type UserMessage,
-} from '@lark-echo/core';
+} from '@anylark/core';
 import { buildTurnArgs, resolveCodexCommand, type SandboxMode } from './codex-cli.ts';
 import {
   codexItem,
@@ -262,7 +262,7 @@ export class CodexAdapter implements AgentAdapter {
   // ---------------------------------------------------------------- internals
 
   private spawnTurn(session: CodexSession, active: ActiveTurn, msg: UserMessage): void {
-    const tmpDir = mkdtempSync(join(tmpdir(), 'lark-echo-codex-'));
+    const tmpDir = mkdtempSync(join(tmpdir(), 'anylark-codex-'));
     active.tmpDir = tmpDir;
     const outFile = join(tmpDir, 'last-message.txt');
     active.outFile = outFile;

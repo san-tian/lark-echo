@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { PiAdapter } from '../src/adapter.ts';
 import { buildPrompt } from '../src/adapter.ts';
 
-const withSessionDir = () => mkdtempSync(join(tmpdir(), 'lark-echo-pi-'));
+const withSessionDir = () => mkdtempSync(join(tmpdir(), 'anylark-pi-'));
 
 /** 契约测试需要真实的 pi CLI；没有就跳过（CI 友好） */
 const hasPi = ((): boolean => {

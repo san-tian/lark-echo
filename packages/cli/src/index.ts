@@ -21,9 +21,9 @@ import {
   writeSecretFile,
   type Binding,
   type DoctorCheck,
-} from '@lark-echo/core';
-import { IpcClient } from '@lark-echo/daemon';
-import { FeishuChannel, verifyCredentials } from '@lark-echo/channel-feishu';
+} from '@anylark/core';
+import { IpcClient } from '@anylark/daemon';
+import { FeishuChannel, verifyCredentials } from '@anylark/channel-feishu';
 import { promptHidden } from './tty.ts';
 
 const daemonMain = fileURLToPath(new URL('../../daemon/src/main.ts', import.meta.url));
@@ -77,11 +77,11 @@ const fail = (line: string): void => print(`✗ ${line}`);
 async function cmdConnect(args: Args): Promise<number> {
   const appId = args.positional[1];
   if (!appId) {
-    print('用法: lark-echo connect <app_id>');
+    print('用法: anylark connect <app_id>');
     return 1;
   }
   const domain = (flag(args, 'domain') ?? 'feishu') as 'feishu' | 'lark';
-  const secret = process.env.LARK_ECHO_APP_SECRET ?? (await promptHidden('App Secret: '));
+  const secret = process.env.ANYLARK_APP_SECRET ?? (await promptHidden('App Secret: '));
   if (!secret) {
     fail('未输入 secret');
     return 1;
@@ -100,15 +100,15 @@ async function cmdConnect(args: Args): Promise<number> {
   print('');
   print('下一步:');
   print('  1. 把机器人拉进目标群');
-  print('  2. lark-echo daemon start');
-  print('  3. lark-echo bind --owner <你的 open_id>   # 或在群里 @机器人 一次，从 lark-echo logs 里找到 open_id');
+  print('  2. anylark daemon start');
+  print('  3. anylark bind --owner <你的 open_id>   # 或在群里 @机器人 一次，从 anylark logs 里找到 open_id');
   return 0;
 }
 
 async function cmdRevoke(args: Args): Promise<number> {
   const appId = args.positional[1];
   if (!appId) {
-    print('用法: lark-echo revoke <app_id>');
+    print('用法: anylark revoke <app_id>');
     return 1;
   }
   ok(revokeCredential(appId) ? `已删除 ${appId} 的本机凭据` : `${appId} 没有本机凭据`);
@@ -215,7 +215,7 @@ async function cmdDoctor(args: Args): Promise<number> {
   }
   const appId = flag(args, 'app') ?? listCredentials()[0]?.appId;
   if (!appId) {
-    fail('本机没有飞书凭据，先运行: lark-echo connect <app_id>');
+    fail('本机没有飞书凭据，先运行: anylark connect <app_id>');
     return 1;
   }
   const cred = loadCredential(appId);
@@ -249,7 +249,7 @@ async function listChats(): Promise<{ chatId: string; name: string }[]> {
   if (remote) return remote;
   const appId = listCredentials()[0]?.appId;
   const cred = appId ? loadCredential(appId) : undefined;
-  if (!cred) throw new Error('本机没有飞书凭据，先运行: lark-echo connect <app_id>');
+  if (!cred) throw new Error('本机没有飞书凭据，先运行: anylark connect <app_id>');
   return new FeishuChannel({ appId: cred.appId, appSecret: cred.appSecret }).listChats();
 }
 
@@ -309,7 +309,7 @@ async function cmdBind(args: Args): Promise<number> {
 async function cmdUnbind(args: Args): Promise<number> {
   const chatId = args.positional[1] ?? flag(args, 'chat');
   if (!chatId) {
-    print('用法: lark-echo unbind <chat_id>');
+    print('用法: anylark unbind <chat_id>');
     return 1;
   }
   const res = await withIpc((c) => c.call<{ removed: boolean }>('bind.remove', { chatId }));
@@ -329,7 +329,7 @@ interface SessionRow {
 async function cmdBindings(): Promise<number> {
   const bindings = (await withIpc((c) => c.call<Binding[]>('bind.list'))) ?? listBindings(openDb());
   if (bindings.length === 0) {
-    print('没有绑定。用 lark-echo bind 创建一个。');
+    print('没有绑定。用 anylark bind 创建一个。');
     return 0;
   }
   const db = openDb();
@@ -366,7 +366,7 @@ async function cmdMirror(args: Args): Promise<number> {
   const chatId = args.positional[1];
   const mode = args.positional[2];
   if (!chatId || !mode || !MIRROR_MODES.includes(mode)) {
-    print(`用法: lark-echo mirror <chat_id> <${MIRROR_MODES.join('|')}>`);
+    print(`用法: anylark mirror <chat_id> <${MIRROR_MODES.join('|')}>`);
     return 1;
   }
   const res = await withIpc((c) => c.call<{ updated: boolean }>('mirror.set', { chatId, mode }));
@@ -379,7 +379,7 @@ async function cmdModel(args: Args): Promise<number> {
   const sessionId = args.positional[1];
   const model = args.positional[2];
   if (!sessionId) {
-    print('用法: lark-echo model <session_id> [<provider>/<model>]');
+    print('用法: anylark model <session_id> [<provider>/<model>]');
     return 1;
   }
   if (!model) {
@@ -406,7 +406,7 @@ async function cmdModel(args: Args): Promise<number> {
 async function cmdModels(args: Args): Promise<number> {
   const sessionId = args.positional[1];
   if (!sessionId) {
-    print('用法: lark-echo models <session_id>');
+    print('用法: anylark models <session_id>');
     return 1;
   }
   const res = await withIpc((c) =>
@@ -536,11 +536,11 @@ async function cmdUi(args: Args): Promise<number> {
     }),
   );
   if (!res) {
-    fail('daemon 未运行，先执行 lark-echo daemon start');
+    fail('daemon 未运行，先执行 anylark daemon start');
     return 1;
   }
   ok(`配置台已启动: ${res.url}`);
-  print(`  监听 ${host} · ${auth ? '需要 token' : '无鉴权（加 --auth 可开）'} · lark-echo ui --stop 关闭`);
+  print(`  监听 ${host} · ${auth ? '需要 token' : '无鉴权（加 --auth 可开）'} · anylark ui --stop 关闭`);
   if (!args.flags['no-open']) {
     spawn('xdg-open', [res.url], { stdio: 'ignore', detached: true }).unref();
   }
@@ -567,28 +567,28 @@ async function cmdStatus(): Promise<number> {
 /* ---------------------------------- help --------------------------------- */
 
 function usage(): void {
-  print(`lark-echo — 把飞书群聊接到本地 agent 会话
+  print(`anylark — 把飞书群聊接到本地 agent 会话
 
 用法:
-  lark-echo connect <app_id>              录入 app secret（TTY 静默输入，唯一入口）
-  lark-echo revoke <app_id>               删除本机凭据
-  lark-echo daemon run|start|stop|status|logs
-  lark-echo doctor [--app <app_id>]       体检：凭据 / 权限 / 长连接
-  lark-echo chats                         列出机器人所在的群
-  lark-echo bind [--agent pi|claude|codex] [--session <id>] [--cwd <dir>] [--owner <open_id>|--anyone] [--chat <chat_id>]
-  lark-echo unbind <chat_id>
-  lark-echo bindings                      绑定总览（含模型与镜像档位）
-  lark-echo mirror <chat_id> <off|user|user+assistant|full>
-  lark-echo model <session_id> [<provider>/<model>]  查看/设置模型
-  lark-echo models <session_id>           列出可切换的模型（需会话在运行）
-  lark-echo sessions [--release <session_id>]
-  lark-echo ui [--host <addr>] [--port N] [--auth] [--no-open] [--stop]
-  lark-echo status
+  anylark connect <app_id>              录入 app secret（TTY 静默输入，唯一入口）
+  anylark revoke <app_id>               删除本机凭据
+  anylark daemon run|start|stop|status|logs
+  anylark doctor [--app <app_id>]       体检：凭据 / 权限 / 长连接
+  anylark chats                         列出机器人所在的群
+  anylark bind [--agent pi|claude|codex] [--session <id>] [--cwd <dir>] [--owner <open_id>|--anyone] [--chat <chat_id>]
+  anylark unbind <chat_id>
+  anylark bindings                      绑定总览（含模型与镜像档位）
+  anylark mirror <chat_id> <off|user|user+assistant|full>
+  anylark model <session_id> [<provider>/<model>]  查看/设置模型
+  anylark models <session_id>           列出可切换的模型（需会话在运行）
+  anylark sessions [--release <session_id>]
+  anylark ui [--host <addr>] [--port N] [--auth] [--no-open] [--stop]
+  anylark status
 
 环境变量:
-  LARK_ECHO_APP_SECRET   自动化场景替代交互输入
-  LARK_ECHO_APP_ID       daemon 使用哪个应用（默认取本机唯一凭据）
-  LARK_ECHO_HOME         状态目录，默认 ~/.lark-echo`);
+  ANYLARK_APP_SECRET   自动化场景替代交互输入
+  ANYLARK_APP_ID       daemon 使用哪个应用（默认取本机唯一凭据）
+  ANYLARK_HOME         状态目录，默认 ~/.anylark`);
 }
 
 async function main(): Promise<number> {

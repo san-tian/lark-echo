@@ -13,7 +13,7 @@ import {
   type OutboundResult,
   type ReceiptKind,
   type ReceiptOptions,
-} from '@lark-echo/core';
+} from '@anylark/core';
 import * as lark from '@larksuiteoapi/node-sdk';
 import { toHistoryMessage, toInboundMessage, type FeishuMessageEvent } from './mapper.ts';
 
@@ -50,8 +50,8 @@ export class FeishuChannel implements Channel {
   private readonly nameCache = new Map<string, string>();
   /** messageId -> reaction_id，用于收尾时撤掉「处理中」表情 */
   private readonly reactionIds = new Map<string, string>();
-  private readonly typingEmoji = process.env.LARK_ECHO_TYPING_EMOJI ?? 'Typing';
-  private readonly doneEmoji = process.env.LARK_ECHO_DONE_EMOJI ?? 'DONE';
+  private readonly typingEmoji = process.env.ANYLARK_TYPING_EMOJI ?? 'Typing';
+  private readonly doneEmoji = process.env.ANYLARK_DONE_EMOJI ?? 'DONE';
 
   constructor(opts: FeishuChannelOptions) {
     this.opts = opts;
@@ -287,7 +287,7 @@ export class FeishuChannel implements Channel {
       id: 'feishu.credentials',
       ok: bot.ok,
       detail: bot.ok ? `bot open_id=${bot.value}` : bot.error,
-      ...(bot.ok ? {} : { hint: '检查 app_id / app_secret；必要时重新运行 lark-echo connect' }),
+      ...(bot.ok ? {} : { hint: '检查 app_id / app_secret；必要时重新运行 anylark connect' }),
     });
     if (bot.ok) this.botOpenId = bot.value;
 
@@ -383,7 +383,7 @@ export class FeishuChannel implements Channel {
   }
 }
 
-/** `lark-echo connect` 用：不建长连接，只用一次 API 调用验证凭据 */
+/** `anylark connect` 用：不建长连接，只用一次 API 调用验证凭据 */
 export async function verifyCredentials(
   appId: string,
   appSecret: string,

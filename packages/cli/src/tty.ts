@@ -4,7 +4,7 @@ import { createInterface } from 'node:readline';
 export function promptHidden(question: string): Promise<string> {
   if (!process.stdin.isTTY) {
     return Promise.reject(
-      new Error('需要交互式终端；CI 场景请改用环境变量 LARK_ECHO_APP_SECRET'),
+      new Error('需要交互式终端；CI 场景请改用环境变量 ANYLARK_APP_SECRET'),
     );
   }
   process.stdout.write(question);

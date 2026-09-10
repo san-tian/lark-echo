@@ -1,4 +1,4 @@
-import type { HistoryMessage, InboundMessage } from '@lark-echo/core';
+import type { HistoryMessage, InboundMessage } from '@anylark/core';
 
 /** 飞书 im.message.receive_v1 事件（只声明我们用到的字段） */
 export interface FeishuMessageEvent {

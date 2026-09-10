@@ -43,4 +43,4 @@ export function createLogger(base: LogFields = {}): Logger {
   };
 }
 
-export const rootLogger = createLogger({ svc: 'lark-echo' });
+export const rootLogger = createLogger({ svc: 'anylark' });

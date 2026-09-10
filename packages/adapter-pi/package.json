@@ -1,5 +1,5 @@
 {
-  "name": "@lark-echo/adapter-pi",
+  "name": "@anylark/adapter-pi",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -7,6 +7,6 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@lark-echo/core": "0.0.1"
+    "@anylark/core": "0.0.1"
   }
 }

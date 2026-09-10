@@ -1,8 +1,8 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { createLogger, type Logger } from '@lark-echo/core';
-import { renderPage } from '@lark-echo/ui';
+import { createLogger, type Logger } from '@anylark/core';
+import { renderPage } from '@anylark/ui';
 import type { UiData } from './ui-data.ts';
 
 export interface UiServerOptions {
@@ -35,7 +35,7 @@ const LOOPBACK = new Set(['127.0.0.1', 'localhost', '::1', '[::1]']);
  * - `--host` 可绑 tailnet 地址；Host 头白名单 = loopback + 绑定地址 + 额外白名单（防 DNS rebinding）
  * - 绑非 loopback 时默认要求能力 token；显式 `--no-auth` 才关（会打印警告）
  * - 写操作一律要 CSRF + Origin 校验，与是否鉴权无关
- * - 不自动关闭：显式 `lark-echo ui --stop` 或 daemon 停止才关（决策 20）
+ * - 不自动关闭：显式 `anylark ui --stop` 或 daemon 停止才关（决策 20）
  */
 export class UiServer {
   private readonly opts: UiServerOptions;
@@ -115,7 +115,7 @@ export class UiServer {
         res.end();
         return;
       }
-      if (!session) return this.send(res, 401, '请从 lark-echo ui 打开的链接访问');
+      if (!session) return this.send(res, 401, '请从 anylark ui 打开的链接访问');
     } else if (!session) {
       // 无鉴权模式：首次访问首页即建立会话（仍需 cookie 才能带 CSRF）
       if (url.pathname !== '/') return this.send(res, 401, '请先打开配置台首页');
