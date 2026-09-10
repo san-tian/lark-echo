@@ -2,6 +2,7 @@ import { createWriteStream, writeFileSync, unlinkSync } from 'node:fs';
 import {
   createLogger,
   ensureHome,
+  getSetting,
   listCredentials,
   loadCredential,
   openDb,
@@ -10,7 +11,7 @@ import {
 } from '@lark-echo/core';
 import { PiAdapter } from '@lark-echo/adapter-pi';
 import { ClaudeAdapter } from '@lark-echo/adapter-claude';
-import { CodexAdapter } from '@lark-echo/adapter-codex';
+import { CodexAdapter, type SandboxMode } from '@lark-echo/adapter-codex';
 import { FeishuChannel } from '@lark-echo/channel-feishu';
 import { Daemon } from './server.ts';
 
@@ -55,7 +56,10 @@ export async function runDaemon(): Promise<void> {
     adapters: {
       pi: new PiAdapter({ logger }),
       claude: new ClaudeAdapter({ logger }),
-      codex: new CodexAdapter({ logger }),
+      codex: new CodexAdapter({
+        logger,
+        getSandboxMode: () => getSetting(db, 'codex.sandbox_mode') as SandboxMode | undefined,
+      }),
     },
     logger,
   });

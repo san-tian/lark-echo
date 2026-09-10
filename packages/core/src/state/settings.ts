@@ -50,6 +50,28 @@ export const DEFAULT_MODEL_KEY = 'default_model';
 /** 默认模型按 agent 分开存（pi / claude / codex 的模型 id 不通用） */
 export const defaultModelKey = (agent: string): string => `default_model:${agent}`;
 
+/** 控制台可配置项的 key（§4.4「设置」面板） */
+export const SETTINGS = {
+  bootstrapEnabled: 'bootstrap.enabled',
+  bootstrapMaxMessages: 'bootstrap.max_messages',
+  bootstrapMaxAgeDays: 'bootstrap.max_age_days',
+  pendingWindowMax: 'pending_window.max_messages',
+  codexSandboxMode: 'codex.sandbox_mode',
+} as const;
+
+export function getBool(db: Db, key: string, def: boolean): boolean {
+  const v = getSetting(db, key);
+  if (v === undefined) return def;
+  return v === 'true' || v === '1';
+}
+
+export function getInt(db: Db, key: string, def: number): number {
+  const v = getSetting(db, key);
+  if (v === undefined) return def;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : def;
+}
+
 interface GlobalRow {
   key: string;
   value: string | null;

@@ -36,6 +36,8 @@ export interface CodexAdapterOptions {
   model?: string;
   /** 不传则沿用 codex 自己的 config.toml */
   sandboxMode?: SandboxMode;
+  /** 每轮从外部（daemon/配置台）动态读取沙箱模式，优先级低于上面的静态值 */
+  getSandboxMode?: () => SandboxMode | undefined;
   extraArgs?: string[];
   /** 会话级系统提示，每轮都拼到 prompt 前面（决策 21：回复契约） */
   appendSystemPrompt?: string;
@@ -278,7 +280,9 @@ export class CodexAdapter implements AgentAdapter {
     const args = buildTurnArgs({
       ...(resumeId ? { resumeId } : {}),
       ...(session.model ? { model: session.model } : {}),
-      ...(this.opts.sandboxMode ? { sandboxMode: this.opts.sandboxMode } : {}),
+      ...((this.opts.sandboxMode ?? this.opts.getSandboxMode?.())
+        ? { sandboxMode: this.opts.sandboxMode ?? this.opts.getSandboxMode?.() }
+        : {}),
       ...(this.opts.extraArgs ? { extraArgs: this.opts.extraArgs } : {}),
       ...(this.opts.skipGitRepoCheck === undefined
         ? {}

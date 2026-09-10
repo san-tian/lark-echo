@@ -20,6 +20,7 @@ import {
   markOutboundSent,
 } from './state/outbound.ts';
 import { getBootstrapRecord, saveBootstrapRecord } from './state/bootstrap.ts';
+import { getBool, getInt, SETTINGS } from './state/settings.ts';
 import type {
   ConversationKey,
   ContextBlock,
@@ -111,7 +112,11 @@ export class Dispatcher {
 
     const ref = sessionRefFor(this.db, chatIdOf(msg));
     if (!ref) return;
-    const window = pendingWindowFor(this.db, chatIdOf(msg), this.pendingWindowLimit);
+    const window = pendingWindowFor(
+      this.db,
+      chatIdOf(msg),
+      getInt(this.db, SETTINGS.pendingWindowMax, this.pendingWindowLimit),
+    );
     const context = formatPendingWindow(msg, window);
 
     const { ahead, dropped } = this.queue.enqueue(ref.sessionId, {
@@ -208,12 +213,15 @@ export class Dispatcher {
     msg: InboundMessage,
     ref: NonNullable<ReturnType<typeof sessionRefFor>>,
   ): Promise<ContextBlock | undefined> {
-    if (!this.bootstrap.enabled) return undefined;
+    const enabled = getBool(this.db, SETTINGS.bootstrapEnabled, this.bootstrap.enabled);
+    if (!enabled) return undefined;
     if (!this.channel.fetchHistory) return undefined;
     const chatId = chatIdOf(msg);
     if (getBootstrapRecord(this.db, ref.sessionId, chatId)) return undefined;
+    const maxMessages = getInt(this.db, SETTINGS.bootstrapMaxMessages, this.bootstrap.maxMessages);
+    const maxAgeDays = getInt(this.db, SETTINGS.bootstrapMaxAgeDays, this.bootstrap.maxAgeDays);
     const history = await this.channel
-      .fetchHistory(chatId, this.bootstrap.maxMessages, this.bootstrap.maxAgeDays)
+      .fetchHistory(chatId, maxMessages, maxAgeDays)
       .catch((err: unknown) => {
         this.logger.warn('bootstrap history fetch failed', {
           chatId,

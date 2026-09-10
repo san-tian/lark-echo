@@ -5,6 +5,7 @@ import { Dispatcher } from '../src/dispatcher.ts';
 import { SessionQueue } from '../src/queue.ts';
 import { insertBinding } from '../src/state/bindings.ts';
 import { pendingWindowFor } from '../src/state/inbound.ts';
+import { setSetting, SETTINGS } from '../src/state/settings.ts';
 import { FakeAdapter, FakeChannel, FakeDriver } from '../src/testing/index.ts';
 import type { Db } from '../src/state/db.ts';
 
@@ -149,4 +150,17 @@ test('端到端：bootstrapHistory 首次触发注入群历史，且只注入一
   await waitFor(() => adapter.received.length >= 2);
   const hist2 = adapter.received[1]!.context?.find((c) => c.kind === 'historical');
   assert.equal(hist2, undefined, '第二次不应再注入');
+});
+
+test('端到端：设置 bootstrap.enabled=false 时不注入历史', async () => {
+  const { db, channel, adapter, dispatcher } = setup({ reply: 'ok' });
+  bind(db, 'oc_a');
+  setSetting(db, SETTINGS.bootstrapEnabled, 'false');
+  channel.history = [
+    { id: 'm1', senderName: '李四', text: '接口挂了', ts: Date.now() - 60_000 },
+  ];
+  await dispatcher.handleInbound(inbound({ chatId: 'oc_a', text: '看看' }));
+  await waitFor(() => channel.sent.length > 0);
+  const hist = adapter.received[0]!.context?.find((c) => c.kind === 'historical');
+  assert.equal(hist, undefined, '关闭后不应注入');
 });

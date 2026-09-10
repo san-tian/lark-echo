@@ -4,6 +4,8 @@ import {
   deleteBindCode,
   deleteBinding,
   discardOutbound,
+  getBool,
+  getInt,
   getSessionModel,
   getSetting,
   insertBinding,
@@ -14,6 +16,7 @@ import {
   newBindCode,
   setSetting,
   setSessionModel,
+  SETTINGS,
   type AgentId,
   type Binding,
   type Channel,
@@ -56,6 +59,14 @@ export interface UiSession {
   capabilities: { modelSwitch: string };
 }
 
+export interface UiSettings {
+  bootstrapEnabled: boolean;
+  bootstrapMaxMessages: number;
+  bootstrapMaxAgeDays: number;
+  pendingWindowMax: number;
+  codexSandboxMode: string;
+}
+
 export interface UiState {
   now: number;
   daemon: { pid: number; channel: string };
@@ -65,6 +76,7 @@ export interface UiState {
   chats: UiChat[];
   models: Record<string, ModelInfo[]>;
   defaultModels: Partial<Record<AgentId, string>>;
+  settings: UiSettings;
   recentCwds: string[];
   queue: {
     pendingInbound: number;
@@ -141,6 +153,13 @@ export class UiData {
         pi: getSetting(this.deps.db, defaultModelKey('pi')),
         claude: getSetting(this.deps.db, defaultModelKey('claude')),
         codex: getSetting(this.deps.db, defaultModelKey('codex')),
+      },
+      settings: {
+        bootstrapEnabled: getBool(this.deps.db, SETTINGS.bootstrapEnabled, true),
+        bootstrapMaxMessages: getInt(this.deps.db, SETTINGS.bootstrapMaxMessages, 50),
+        bootstrapMaxAgeDays: getInt(this.deps.db, SETTINGS.bootstrapMaxAgeDays, 7),
+        pendingWindowMax: getInt(this.deps.db, SETTINGS.pendingWindowMax, 50),
+        codexSandboxMode: getSetting(this.deps.db, SETTINGS.codexSandboxMode) ?? '',
       },
       recentCwds: [...new Set(bindings.map((b) => b.cwd))],
       queue: {
@@ -234,6 +253,17 @@ export class UiData {
         );
         log.info('default model set', { agent, model: body.model ?? null });
         return { agent, model: body.model ?? null };
+      }
+      case '/api/settings': {
+        const key = String(body.key ?? '');
+        if (!(Object.values(SETTINGS) as string[]).includes(key)) {
+          throw new Error(`不允许修改的配置项: ${key}`);
+        }
+        const raw = body.value;
+        const value = raw === undefined || raw === null || raw === '' ? undefined : String(raw);
+        setSetting(this.deps.db, key, value);
+        log.info('setting set', { key, value: value ?? null });
+        return { key, value: value ?? null };
       }
       default:
         throw new Error(`unknown action: ${method} ${path}`);

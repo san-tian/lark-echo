@@ -166,6 +166,48 @@ function render() {
     loadModelsFor(a, 'def-' + a).then(function () { if (defaults[a]) sel.value = defaults[a]; });
   });
 
+  // 设置
+  var st = state.settings || {};
+  document.getElementById('settings').innerHTML = [
+    '<fieldset><legend>历史回填（bootstrapHistory）</legend>',
+    '<div class="row">',
+      '<label>开关</label>',
+      '<select id="set-bootstrap.enabled">',
+        opt('true', '开', st.bootstrapEnabled !== false),
+        opt('false', '关', st.bootstrapEnabled === false),
+      '</select>',
+      '<label>条数</label>',
+      '<input id="set-bootstrap.max_messages" type="number" min="1" max="200" value="' + esc(st.bootstrapMaxMessages ?? 50) + '">',
+      '<label>天数</label>',
+      '<input id="set-bootstrap.max_age_days" type="number" min="1" max="90" value="' + esc(st.bootstrapMaxAgeDays ?? 7) + '">',
+    '</div>',
+    '<div class="dim">每个群只回填一次；改这里后新绑定的群生效。</div>',
+    '</fieldset>',
+    '<fieldset><legend>旁观消息窗口（pendingWindow）</legend>',
+    '<div class="row">',
+      '<label>条数</label>',
+      '<input id="set-pending_window.max_messages" type="number" min="1" max="200" value="' + esc(st.pendingWindowMax ?? 50) + '">',
+    '</div>',
+    '<div class="dim">群里没人 @ 机器人时，积累给下一条消息做上下文的最大条数。</div>',
+    '</fieldset>',
+    '<fieldset><legend>Codex 沙箱</legend>',
+    '<div class="row">',
+      '<label>沙箱模式</label>',
+      '<select id="set-codex.sandbox_mode">',
+        opt('', '跟随 codex config.toml', !st.codexSandboxMode),
+        opt('read-only', 'read-only（只读）', st.codexSandboxMode === 'read-only'),
+        opt('workspace-write', 'workspace-write（可写工作区）', st.codexSandboxMode === 'workspace-write'),
+        opt('danger-full-access', 'danger-full-access（完全访问）', st.codexSandboxMode === 'danger-full-access'),
+      '</select>',
+    '</div>',
+    '<div class="dim">下一轮 codex 调用生效。</div>',
+    '</fieldset>',
+    '<div class="row" style="margin:0">',
+      '<button class="primary" data-act="setting-save">保存设置</button>',
+      '<span class="dim">历史回填/窗口立即生效；沙箱下一轮生效</span>',
+    '</div>'
+  ].join('');
+
   var sessRows = state.sessions.map(function (s) {
     var models = (state.models && state.models[s.sessionId]) || [];
     var opts = models.map(function (m) {
@@ -267,6 +309,20 @@ document.addEventListener('click', function (ev) {
   } else if (a === 'default-model-set') {
     var sel = document.getElementById('def-' + el.dataset.agent);
     act(function () { return api('POST', '/api/default-model', { agent: el.dataset.agent, model: sel.value }); });
+  } else if (a === 'setting-save') {
+    act(function () {
+      var keys = [
+        'bootstrap.enabled', 'bootstrap.max_messages', 'bootstrap.max_age_days',
+        'pending_window.max_messages', 'codex.sandbox_mode'
+      ];
+      var chain = Promise.resolve();
+      keys.forEach(function (k) {
+        var inp = document.getElementById('set-' + k);
+        if (!inp) return;
+        chain = chain.then(function () { return api('POST', '/api/settings', { key: k, value: inp.value }); });
+      });
+      return chain;
+    });
   } else if (a === 'bind') {
     act(function () {
       var picked = document.getElementById('f-session').value;
@@ -389,6 +445,11 @@ export function renderPage(opts: PageOptions): string {
     <h2>渠道默认模型</h2>
     <div id="defaults"></div>
     <div class="dim">新建会话时若未单独指定，就用这里的默认模型。</div>
+  </section>
+
+  <section>
+    <h2>设置</h2>
+    <div id="settings"></div>
   </section>
 
   <section>
