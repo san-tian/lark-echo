@@ -93,3 +93,69 @@ test('nonce 变化只影响 nonce 属性，不影响结构', () => {
   const b = renderPage({ csrf: 'c', nonce: 'n2' }).replaceAll('n2', 'N');
   assert.equal(a, b);
 });
+
+/* ---------------------------- 改版后的结构 ---------------------------- */
+
+test('骨架挂载点齐全（tab / 视图 / 两个对话框）', () => {
+  const html = page();
+  for (const id of ['tabs', 'view', 'daemon', 'toasts', 'confirm', 'choose']) {
+    assert.match(html, new RegExp(`id="${id}"`), `缺挂载点 #${id}`);
+  }
+});
+
+test('客户端只调真实存在的写接口', () => {
+  // 改版时我凭记忆写了个 /api/mirror，实际不存在（决策 17 已废弃 mirror）。
+  // 这条锁住：脚本里 api('POST', ...) 的路径必须在白名单内。
+  const REAL = new Set([
+    '/api/bind', '/api/unbind', '/api/model', '/api/default-model', '/api/settings',
+    '/api/session/release', '/api/doctor/refresh', '/api/chats/refresh',
+    '/api/outbound/flush', '/api/outbound/discard', '/api/code', '/api/code/delete',
+  ]);
+  const js = clientScript(page());
+  const called = [...js.matchAll(/api\('POST',\s*'([^']+)'/g)].map((m) => m[1]!);
+  assert.ok(called.length > 0, '应该有写操作');
+  const bogus = [...new Set(called)].filter((p) => !REAL.has(p));
+  assert.deepEqual(bogus, [], `调用了不存在的接口: ${bogus.join(', ')}`);
+});
+
+test('读接口也都是真实存在的', () => {
+  const REAL = new Set(['/api/state', '/api/fs', '/api/members', '/api/models', '/api/sessions']);
+  const js = clientScript(page());
+  const called = [...js.matchAll(/(?:getJSON|fetch)\('(\/api\/[a-z/-]+)/g)].map((m) => m[1]!);
+  const bogus = [...new Set(called)].filter((p) => !REAL.has(p));
+  assert.deepEqual(bogus, [], `读了不存在的接口: ${bogus.join(', ')}`);
+});
+
+test('不引用 session.ref.*（/api/state 里 session 是扁平的）', () => {
+  // UiSession 是 {sessionId, agent, cwd, driver, idleMs, model, capabilities}，
+  // 没有 ref 这层 —— 写成 s.ref.sessionId 会渲染出 undefined。
+  const js = clientScript(page());
+  assert.equal(/\.ref\.(sessionId|agent|cwd)/.test(js), false, '不该有 .ref. 层级');
+});
+
+test('mirror 已彻底移除（决策 17 废弃）', () => {
+  assert.equal(/mirror/i.test(page()), false);
+});
+
+test('向导是分步的，四步齐全', () => {
+  const js = clientScript(page());
+  const m = js.match(/STEPS\s*=\s*\[([^\]]+)\]/);
+  assert.ok(m, '找不到 STEPS');
+  assert.equal(m[1]!.split(',').length, 4, '向导应为 4 步');
+});
+
+test('危险操作走确认对话框，不用原生 confirm', () => {
+  const js = clientScript(page());
+  assert.equal(/(?<!\w)confirm\s*\(/.test(js.replace(/confirmDlg\s*\(/g, '')), false,
+    '不应直接调原生 confirm()');
+  assert.match(js, /confirmDlg\(/, '应使用自绘确认框');
+  // 断开连接与重启会话都必须确认
+  assert.match(js, /a === 'unbind'[\s\S]{0,200}confirmDlg/);
+  assert.match(js, /a === 'release'[\s\S]{0,200}confirmDlg/);
+});
+
+test('列表模式下隐藏「保存」按钮（它只读自由输入框）', () => {
+  const js = clientScript(page());
+  assert.match(js, /saveBtn\.style\.display\s*=\s*free\s*\?/,
+    '有模型列表时必须隐藏保存按钮，否则会把已选模型重置成默认');
+});
