@@ -3,7 +3,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { AddressInfo } from 'node:net';
 import { createLogger, type Logger } from '@instead/core';
 import { renderPage } from '@instead/ui';
-import type { UiData } from './ui-data.ts';
+import { UiPathError, type UiData } from './ui-data.ts';
 
 export interface UiServerOptions {
   data: UiData;
@@ -132,7 +132,15 @@ export class UiServer {
       const data = this.opts.data;
       if (url.pathname === '/api/state') return this.json(res, 200, await data.state());
       if (url.pathname === '/api/fs') {
-        return this.json(res, 200, await data.listDirs(url.searchParams.get('path') ?? undefined));
+        try {
+          return this.json(res, 200, await data.listDirs(url.searchParams.get('path') ?? undefined));
+        } catch (err) {
+          // 手输路径：参数错就明确告知，不要静默退回 HOME（那会让人以为跳成功了）
+          if (err instanceof UiPathError) {
+            return this.json(res, 400, { error: { code: err.code, message: err.message } });
+          }
+          throw err;
+        }
       }
       if (url.pathname === '/api/sessions') {
         const agent = (url.searchParams.get('agent') ?? 'pi') as 'pi' | 'claude' | 'codex';

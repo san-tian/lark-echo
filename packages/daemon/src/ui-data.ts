@@ -39,6 +39,54 @@ export interface UiDirListing {
   dirs: { name: string; path: string }[];
 }
 
+/** 目录选择器可浏览的根：默认只有 `$HOME`，需要别的就设 `INSTEAD_FS_ROOTS`（冒号分隔） */
+export function fsRoots(env = process.env): string[] {
+  const raw = env.INSTEAD_FS_ROOTS?.trim();
+  const list = raw
+    ? raw
+        .split(':')
+        .map((p) => p.trim())
+        .filter(Boolean)
+    : [homedir()];
+  return list.map((p) => resolve(expandHome(p)));
+}
+
+/** `~/RSI` 这种写法得能用 —— 手输路径的人一定会这么写 */
+export function expandHome(input: string, home = homedir()): string {
+  if (input === '~') return home;
+  return input.startsWith('~/') ? join(home, input.slice(2)) : input;
+}
+
+function isInsideRoots(path: string, roots: string[]): boolean {
+  return roots.some((root) => path === root || path.startsWith(`${root}/`));
+}
+
+/**
+ * 手输路径 → 绝对路径。空字符串 = 「给我第一个根」（首次打开）。
+ * 纯函数，便于测试：真实路径检查（存不存在/是不是目录）留给 `listDirs`。
+ */
+export function resolveBrowsePath(input: string | undefined, roots: string[]): string {
+  const requested = input?.trim();
+  const path = requested ? resolve(expandHome(requested)) : roots[0]!;
+  if (!isInsideRoots(path, roots)) {
+    throw new UiPathError(
+      'outside_roots',
+      `只能浏览 ${roots.join('、')} 下的目录；要放开别的请给 daemon 设 INSTEAD_FS_ROOTS`,
+    );
+  }
+  return path;
+}
+
+/** 目录选择器的参数错误：HTTP 层拿它回 400，而不是静默退回 HOME */
+export class UiPathError extends Error {
+  readonly code: string;
+  constructor(code: string, message: string) {
+    super(message);
+    this.name = 'UiPathError';
+    this.code = code;
+  }
+}
+
 export interface UiSessionOption {
   sessionId: string;
   mtime: number;
@@ -329,19 +377,30 @@ export class UiData {
     }
   }
 
-  /** 目录选择器：限制在 $HOME 内，避免任意路径浏览 */
+  /**
+   * 目录选择器。限制在允许的根内（默认 `$HOME`，可用 `INSTEAD_FS_ROOTS` 放宽）——
+   * 配置台默认绑在 tailnet 上，不该变成一个任意路径浏览器。
+   *
+   * 写错路径要**明确报错**，不能静静退回 HOME：现在这一栏是可以直接手输的，
+   * 静默回落会让用户以为「跳过去了」。
+   */
   async listDirs(input?: string): Promise<UiDirListing> {
-    const home = homedir();
-    let path = input?.trim() ? resolve(input) : home;
-    if (path !== home && !path.startsWith(home + '/')) path = home;
-    const entries = await readdir(path, { withFileTypes: true }).catch(() => []);
+    const roots = fsRoots();
+    const path = resolveBrowsePath(input, roots);
+    const entries = await readdir(path, { withFileTypes: true }).catch((err: unknown) => {
+      const code = (err as { code?: string }).code;
+      if (code === 'ENOENT') throw new UiPathError('not_found', `目录不存在：${path}`);
+      if (code === 'ENOTDIR') throw new UiPathError('not_a_dir', `这不是目录：${path}`);
+      if (code === 'EACCES') throw new UiPathError('denied', `没有权限读这个目录：${path}`);
+      throw new UiPathError('unreadable', `读不了这个目录：${path}`);
+    });
     const dirs = entries
       .filter((e) => e.isDirectory())
       .map((e) => ({ name: e.name, path: join(path, e.name) }))
       .sort((a, b) => a.name.localeCompare(b.name));
     return {
       path,
-      ...(path === home ? {} : { parent: dirname(path) }),
+      ...(path === roots[0] || !isInsideRoots(dirname(path), roots) ? {} : { parent: dirname(path) }),
       dirs,
     };
   }

@@ -190,3 +190,33 @@ test('列表模式下隐藏「保存」按钮（它只读自由输入框）', ()
   assert.match(js, /saveBtn\.style\.display\s*=\s*free\s*\?/,
     '有模型列表时必须隐藏保存按钮，否则会把已选模型重置成默认');
 });
+
+/* ---------------------------- 目录选择器可手输 ---------------------------- */
+
+test('目录步有可手输的地址栏（带可访问名，说明支持 ~）', () => {
+  const js = clientScript(page());
+  assert.match(js, /id="w-cwd"/, '要有路径输入框');
+  assert.match(js, /aria-label="目录路径（可直接输入，支持 ~\/）"/);
+  assert.match(js, /data-act="w-goto"/, '要有跳转按钮');
+  assert.match(js, /for="w-cwd"/, 'input 要有对应 label');
+});
+
+test('地址栏回车即跳转，且不提交页面', () => {
+  const js = clientScript(page());
+  assert.match(js, /ev\.key === 'Enter'[\s\S]{0,80}w-cwd/, '回车要绑在地址栏上');
+  assert.match(js, /ev\.preventDefault\(\)/);
+  assert.equal(/<form[^>]*w-cwd/.test(js), false, '不该包在 form 里（会把整页提交掉）');
+});
+
+test('跳转失败显示错误、不假装成功', () => {
+  const js = clientScript(page());
+  assert.match(js, /d\.error/, '要读服务端的 error');
+  assert.match(js, /dirError/, '要把它挂到界面上');
+  assert.match(js, /el\.focus\(\)/, '失败后焦点回到地址栏，方便改错');
+});
+
+test('目录列表端点带 path 参数走真实接口', () => {
+  const js = clientScript(page());
+  assert.match(js, /getJSON\('\/api\/fs'/);
+  assert.match(js, /encodeURIComponent\(path\)/);
+});

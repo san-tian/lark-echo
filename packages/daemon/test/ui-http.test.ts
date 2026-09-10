@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { request } from 'node:http';
 import { UiServer } from '../src/http.ts';
-import type { UiData } from '../src/ui-data.ts';
+import { UiPathError, type UiData } from '../src/ui-data.ts';
 
 const TOKEN = 'capability-token-for-test';
 
@@ -185,4 +185,64 @@ test('Host 白名单：加进去的 tailnet 名不再被 403', async () => {
   });
   assert.equal(status, 401, '白名单内应是未登录而不是 403');
   await server.close();
+});
+
+/**
+ * 只为 /api/fs 起一个最小服务：无鉴权模式下先访问首页拿 cookie（否则 401）。
+ * 用 try/finally 保证断言失败也能关掉 server，不然整个测试文件会被吊死。
+ */
+async function withFsServer(
+  listDirs: (path?: string) => Promise<unknown>,
+  fn: (base: string, cookie: string) => Promise<void>,
+): Promise<void> {
+  const server = new UiServer({
+    data: { state: async () => ({}), listDirs } as unknown as UiData,
+    port: 0,
+  });
+  const { port } = await server.start();
+  const base = `http://127.0.0.1:${port}`;
+  try {
+    const page = await fetch(`${base}/`);
+    await page.text();
+    const cookie = (page.headers.getSetCookie?.() ?? []).map((c) => c.split(';')[0]).join('; ');
+    await fn(base, cookie);
+  } finally {
+    await server.close();
+  }
+}
+
+test('/api/fs 参数错 → 400 带 code/message（不是 500，也不静默退回 HOME）', async () => {
+  await withFsServer(
+    async () => {
+      throw new UiPathError('not_found', '目录不存在：/home/dev/nope');
+    },
+    async (base, cookie) => {
+      const res = await fetch(`${base}/api/fs?path=${encodeURIComponent('/home/dev/nope')}`, {
+        headers: { cookie },
+      });
+      assert.equal(res.status, 400);
+      assert.deepEqual(await res.json(), {
+        error: { code: 'not_found', message: '目录不存在：/home/dev/nope' },
+      });
+    },
+  );
+});
+
+test('/api/fs 正常时原样返回目录列表', async () => {
+  await withFsServer(
+    async (path) => ({
+      path: path ?? '/home/dev',
+      parent: '/home',
+      dirs: [{ name: 'instead', path: '/home/dev/instead' }],
+    }),
+    async (base, cookie) => {
+      const res = await fetch(`${base}/api/fs?path=/home/dev`, { headers: { cookie } });
+      assert.equal(res.status, 200);
+      assert.deepEqual(await res.json(), {
+        path: '/home/dev',
+        parent: '/home',
+        dirs: [{ name: 'instead', path: '/home/dev/instead' }],
+      });
+    },
+  );
 });

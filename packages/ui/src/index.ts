@@ -278,6 +278,7 @@ var STEPS = ['选群', '选目录', '选 agent', '选会话', '谁能用'];
 function openWizard() {
   wiz = {
     step: 0, chatId: '', chatName: '', cwd: '', dirs: [], parent: null,
+    dirInput: '', dirError: '', dirLoading: false,
     agent: 'pi', model: '', owner: '', members: [], q: '',
     // sessionId 为空 = 新建；resume=true 表示接管已有会话
     sessionId: '', resume: false, sessions: null
@@ -289,13 +290,39 @@ function openWizard() {
 function closeWizard() { wiz = null; render(); }
 
 function loadDirs(path) {
-  return getJSON('/api/fs' + (path ? '?path=' + encodeURIComponent(path) : '')).then(function (d) {
-    if (!wiz) return;
-    wiz.cwd = d.path;
-    wiz.dirs = d.dirs || [];
-    wiz.parent = d.parent || null;
-    render();
-  });
+  wiz.dirLoading = true;
+  wiz.dirError = '';
+  render();
+  return getJSON('/api/fs' + (path ? '?path=' + encodeURIComponent(path) : ''))
+    .then(function (d) {
+      if (!wiz) return;
+      if (d && d.error) {
+        /* 手输的路径打不开：保留原样让用户改，不要跳回旧目录假装成功 */
+        wiz.dirError = d.error.message || '打不开这个目录';
+        return;
+      }
+      wiz.cwd = d.path;
+      wiz.dirs = d.dirs || [];
+      wiz.parent = d.parent || null;
+      wiz.dirInput = '';
+    })
+    .then(function () {
+      if (!wiz) return;
+      wiz.dirLoading = false;
+      render();
+      /* 跳转失败时把焦戻回地址栏（render 会把 input 重建），方便改错 */
+      var el = document.getElementById('w-cwd');
+      if (el && wiz.dirError) el.focus();
+    });
+}
+
+/** 地址栏跳转：支持 ~/、相对路径、结尾多余的 / */
+function gotoDir() {
+  var el = document.getElementById('w-cwd');
+  var v = el && el.value ? el.value.trim() : '';
+  if (!v) return;
+  wiz.dirInput = v;
+  return loadDirs(v);
 }
 
 function loadMembers() {
@@ -371,6 +398,20 @@ function stepChat() {
 function stepDir() {
   var crumbs = '<div class="crumb"><span>当前</span><b class="mono">' + esc(wiz.cwd) + '</b>' +
     (wiz.parent ? ' <button data-act="w-up">↑ 上一级</button>' : '') + '</div>';
+  var bar =
+    '<div class="field"><label for="w-cwd">路径</label>' +
+      '<div class="row" style="gap:6px">' +
+        '<input id="w-cwd" class="mono grow" type="text" spellcheck="false" ' +
+          'autocomplete="off" aria-label="目录路径（可直接输入，支持 ~/）" ' +
+          'value="' + esc(wiz.dirError ? wiz.dirInput : wiz.cwd) + '">' +
+        '<button class="btn" type="button" data-act="w-goto"' + (wiz.dirLoading ? ' disabled' : '') + '>跳转</button>' +
+      '</div>' +
+      (wiz.dirLoading
+        ? '<div class="hint">打开中…</div>'
+        : wiz.dirError
+          ? '<div class="hint" style="color:var(--danger,#e5484d)">' + esc(wiz.dirError) + '</div>'
+          : '<div class="hint">直接输路径回车即可跳转（相对 $HOME，支持 <code>~</code>）。</div>') +
+    '</div>';
   var recent = (state.recentCwds || []).filter(function (p) { return p !== wiz.cwd; });
   var recentHtml = recent.length
     ? '<div class="field"><label>最近用过</label>' + recent.map(function (p) {
@@ -383,7 +424,7 @@ function stepDir() {
       '<span class="dim">📁</span><span class="grow">' + esc(d.name) + '</span>' +
       '<span class="dim" style="font-size:11px">进入</span></button>';
   }).join('');
-  return recentHtml + crumbs +
+  return recentHtml + bar + crumbs +
     (rows ? '<div class="picker">' + rows + '</div>'
           : '<div class="dim" style="padding:14px 0;font-size:12.5px">这个目录下没有子目录</div>') +
     '<div class="hint" style="margin-top:10px;font-size:11.5px;color:var(--dim-2)">' +
@@ -694,6 +735,7 @@ document.addEventListener('click', function (ev) {
     return;
   }
   if (a === 'w-cd') { loadDirs(el.dataset.path); return; }
+  if (a === 'w-goto') { gotoDir(); return; }
   if (a === 'w-up') { loadDirs(wiz.parent || '/'); return; }
   if (a === 'w-agent') {
     if (wiz.agent !== el.dataset.id) {
@@ -809,6 +851,14 @@ document.addEventListener('click', function (ev) {
 });
 
 /* 群过滤：本地过滤，不打服务端 */
+document.addEventListener('keydown', function (ev) {
+  /* 地址栏回车 = 跳转（没有 <form>，不然会把整个页面提交掉） */
+  if (ev.key === 'Enter' && ev.target && ev.target.id === 'w-cwd') {
+    ev.preventDefault();
+    gotoDir();
+  }
+});
+
 document.addEventListener('input', function (ev) {
   if (ev.target.id === 'w-q' && wiz) {
     wiz.q = ev.target.value;
