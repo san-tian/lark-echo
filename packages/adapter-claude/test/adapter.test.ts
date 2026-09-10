@@ -134,7 +134,7 @@ test('真实事件字段：session_id / text_delta / tool_use / result', () => {
 // ── 转录 ──────────────────────────────────────────────────────────────────
 
 test('encodeProjectSlug：非字母数字都变 -（实测 /tmp/claude.spike_x → -tmp-claude-spike-x）', () => {
-  assert.equal(encodeProjectSlug('/home/dev/anylark'), '-home-dev-anylark');
+  assert.equal(encodeProjectSlug('/home/dev/instead'), '-home-dev-instead');
   assert.equal(encodeProjectSlug('/tmp/claude.spike_x'), '-tmp-claude-spike-x');
 });
 
@@ -190,7 +190,7 @@ test('toHistoryEntry：跳过 sidechain / 非消息 / 空文本', () => {
 });
 
 test('readTranscript：文件不存在返回空，游标之后的条目才 yield', async () => {
-  const dir = tempDir('anylark-claude-tx-');
+  const dir = tempDir('instead-claude-tx-');
   const file = join(dir, 'sid.jsonl');
   assert.deepEqual(await collect(readTranscript(file)), []);
 
@@ -222,7 +222,7 @@ test('readTranscript：文件不存在返回空，游标之后的条目才 yield
 });
 
 test('transcriptPath / transcriptExists 跟随 projectsRoot', () => {
-  const root = tempDir('anylark-claude-projects-');
+  const root = tempDir('instead-claude-projects-');
   const cwd = '/tmp/claude.spike_x';
   assert.equal(
     transcriptPath(cwd, 'sid-1', root),
@@ -258,7 +258,7 @@ exit 0
 }
 
 test('适配器：假 CLI 跑通 delta/final/tool，第二轮带上 --resume，上下文进 --append-system-prompt', async () => {
-  const dir = tempDir('anylark-claude-fake-');
+  const dir = tempDir('instead-claude-fake-');
   const command = writeFakeClaude(dir);
   const argsLog = join(dir, 'args.log');
   const promptLog = join(dir, 'prompt.log');
@@ -335,7 +335,7 @@ test('适配器：假 CLI 跑通 delta/final/tool，第二轮带上 --resume，�
 test('学到的 session id 会重挂 sessions 索引，旧 handle 仍然可用', async () => {
   // 回归：ref.sessionId 是 sessions 的 key，第一轮学到 claude 自己的 id 后
   // 就地改了 ref 却没改 map，导致后续 requireSession 抛 "session not started"。
-  const dir = tempDir('anylark-claude-rekey-');
+  const dir = tempDir('instead-claude-rekey-');
   const command = writeFakeClaude(dir);
   const adapter = new ClaudeAdapter({ command, projectsRoot: join(dir, 'projects') });
   const handle = await adapter.start({ cwd: dir, sessionId: 'requested-id' });
@@ -351,7 +351,7 @@ test('学到的 session id 会重挂 sessions 索引，旧 handle 仍然可用',
 });
 
 test('适配器：子进程非零退出且没有 result 事件 → error', async () => {
-  const dir = tempDir('anylark-claude-fail-');
+  const dir = tempDir('instead-claude-fail-');
   const command = join(dir, 'fail.sh');
   writeFileSync(command, '#!/bin/bash\necho "boom" >&2\nexit 1\n');
   chmodSync(command, 0o755);
@@ -387,7 +387,7 @@ async function firstMatching(
 }
 
 test('契约：真实 claude 一轮跑通，最终文本来自 result 事件', { skip: !hasClaude, timeout: 300_000 }, async () => {
-  const cwd = tempDir('anylark-claude-live-');
+  const cwd = tempDir('instead-claude-live-');
   const adapter = new ClaudeAdapter();
   const handle = await adapter.start({ cwd, sessionId: 'contract-claude-001' });
   assert.equal(handle.ref.sessionId, 'contract-claude-001');
@@ -416,7 +416,7 @@ test('契约：真实 claude 一轮跑通，最终文本来自 result 事件', {
 });
 
 test('契约：同一 session 第二轮 --resume 记得上一轮，history() 读得到转录', { skip: !hasClaude, timeout: 300_000 }, async () => {
-  const cwd = tempDir('anylark-claude-resume-');
+  const cwd = tempDir('instead-claude-resume-');
   const adapter = new ClaudeAdapter();
   const handle = await adapter.start({ cwd, sessionId: 'contract-claude-002' });
 

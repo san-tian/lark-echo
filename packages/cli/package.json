@@ -1,18 +1,18 @@
 {
-  "name": "@anylark/cli",
+  "name": "@instead/cli",
   "version": "0.0.1",
   "private": true,
   "type": "module",
   "bin": {
-    "anylark": "./bin/anylark"
+    "instead": "./bin/instead"
   },
   "exports": {
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@anylark/adapter-pi": "0.0.1",
-    "@anylark/channel-feishu": "0.0.1",
-    "@anylark/core": "0.0.1",
-    "@anylark/daemon": "0.0.1"
+    "@instead/adapter-pi": "0.0.1",
+    "@instead/channel-feishu": "0.0.1",
+    "@instead/core": "0.0.1",
+    "@instead/daemon": "0.0.1"
   }
 }

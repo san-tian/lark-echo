@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { ensureHome, listBindings, openDb, paths, writeSecretFile, type Binding } from '@anylark/core';
+import { ensureHome, listBindings, openDb, paths, writeSecretFile, type Binding } from '@instead/core';
 import { bool, flag, type Args } from '../args.ts';
 import { fail, ok, print } from '../io.ts';
 import { pingDaemon, withDaemon } from '../daemon-client.ts';
@@ -55,12 +55,12 @@ export async function cmdUi(args: Args): Promise<number> {
     }),
   );
   if (!res) {
-    fail('daemon 未运行，先执行 anylark daemon start');
+    fail('daemon 未运行，先执行 instead daemon start');
     return 1;
   }
   ok(`配置台已启动: ${res.url}`);
   print(
-    `  监听 ${host} · ${auth ? '需要 token' : '无鉴权（加 --auth 可开）'} · anylark ui --stop 关闭`,
+    `  监听 ${host} · ${auth ? '需要 token' : '无鉴权（加 --auth 可开）'} · instead ui --stop 关闭`,
   );
   if (!bool(args, 'no-open')) {
     spawn('xdg-open', [res.url], { stdio: 'ignore', detached: true }).unref();

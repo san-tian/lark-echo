@@ -1,4 +1,4 @@
-import { getSessionModel, openDb, setSessionModel } from '@anylark/core';
+import { getSessionModel, openDb, setSessionModel } from '@instead/core';
 import { flag, type Args } from '../args.ts';
 import { fail, ok, print } from '../io.ts';
 import { withDaemon } from '../daemon-client.ts';
@@ -13,7 +13,7 @@ export async function cmdModel(args: Args): Promise<number> {
   const sessionId = args.positional[1];
   const model = args.positional[2];
   if (!sessionId) {
-    print('用法: anylark model <session_id> [<provider>/<model>]');
+    print('用法: instead model <session_id> [<provider>/<model>]');
     return 1;
   }
   if (!model) {
@@ -40,7 +40,7 @@ export async function cmdModel(args: Args): Promise<number> {
 export async function cmdModels(args: Args): Promise<number> {
   const sessionId = args.positional[1];
   if (!sessionId) {
-    print('用法: anylark models <session_id>');
+    print('用法: instead models <session_id>');
     return 1;
   }
   const res = await withDaemon((c) =>

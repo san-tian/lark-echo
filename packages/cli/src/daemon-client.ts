@@ -1,5 +1,5 @@
-import { paths } from '@anylark/core';
-import { IpcClient } from '@anylark/daemon';
+import { paths } from '@instead/core';
+import { IpcClient } from '@instead/daemon';
 
 /**
  * 连不上 daemon 时返回 undefined，**daemon 在但调用失败时照原样抛出**。

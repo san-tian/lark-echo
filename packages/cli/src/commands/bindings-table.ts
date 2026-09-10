@@ -1,4 +1,4 @@
-import type { Binding } from '@anylark/core';
+import type { Binding } from '@instead/core';
 import { table } from '../io.ts';
 
 /** 绑定总览的表格排版。纯函数：模型查询由调用方注入，便于测试。 */

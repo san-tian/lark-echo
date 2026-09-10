@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { captureOutput, fail, ok, print, table } from '../src/io.ts';
 import { formatBindings } from '../src/commands/bindings-table.ts';
-import type { Binding } from '@anylark/core';
+import type { Binding } from '@instead/core';
 
 test('print / ok / fail 的前缀', () => {
   const lines: string[] = [];

@@ -11,7 +11,7 @@ import {
   setMirrorMode,
   MIRROR_MODES,
   type Binding,
-} from '@anylark/core';
+} from '@instead/core';
 import { bool, flag, type Args } from '../args.ts';
 import { fail, ok, print } from '../io.ts';
 import { withDaemon } from '../daemon-client.ts';
@@ -90,7 +90,7 @@ export async function cmdBind(args: Args): Promise<number> {
 export async function cmdUnbind(args: Args): Promise<number> {
   const chatId = args.positional[1] ?? flag(args, 'chat');
   if (!chatId) {
-    print('用法: anylark unbind <chat_id>');
+    print('用法: instead unbind <chat_id>');
     return 1;
   }
   const res = await withDaemon((c) => c.call<{ removed: boolean }>('bind.remove', { chatId }));
@@ -107,7 +107,7 @@ export async function cmdMirror(args: Args): Promise<number> {
   const chatId = args.positional[1];
   const mode = args.positional[2];
   if (!chatId || !mode || !isMirrorMode(mode)) {
-    print(`用法: anylark mirror <chat_id> <${MIRROR_MODES.join('|')}>`);
+    print(`用法: instead mirror <chat_id> <${MIRROR_MODES.join('|')}>`);
     return 1;
   }
   const res = await withDaemon((c) => c.call<{ updated: boolean }>('mirror.set', { chatId, mode }));
@@ -124,7 +124,7 @@ export async function cmdBindings(): Promise<number> {
   const bindings =
     (await withDaemon((c) => c.call<Binding[]>('bind.list'))) ?? listBindings(openDb());
   if (bindings.length === 0) {
-    print('没有绑定。用 anylark bind 创建一个。');
+    print('没有绑定。用 instead bind 创建一个。');
     return 0;
   }
   // 运行中的会话可能已切过模型，优先用它上报的；否则回落到库里存的

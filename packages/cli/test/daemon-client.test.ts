@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { IpcServer } from '@anylark/daemon';
-import { createLogger, setLogSink } from '@anylark/core';
+import { IpcServer } from '@instead/daemon';
+import { createLogger, setLogSink } from '@instead/core';
 import { pingDaemon, withDaemon } from '../src/daemon-client.ts';
 
 // IpcServer 会把 handler 抛的错记成 warn —— 本测试故意制造这些错，静音掉
@@ -15,7 +15,7 @@ async function withServer(
   handler: (method: string, params: Record<string, unknown>) => Promise<unknown>,
   fn: (socketPath: string) => Promise<void>,
 ): Promise<void> {
-  const dir = mkdtempSync(join(tmpdir(), 'anylark-ipc-'));
+  const dir = mkdtempSync(join(tmpdir(), 'instead-ipc-'));
   const socketPath = join(dir, 'd.sock');
   const server = new IpcServer(socketPath, handler, quiet);
   await server.listen();
@@ -28,7 +28,7 @@ async function withServer(
 }
 
 test('daemon 不在 → undefined（允许调用方退化成直接写库）', async () => {
-  const missing = join(tmpdir(), 'anylark-nonexistent-' + Date.now() + '.sock');
+  const missing = join(tmpdir(), 'instead-nonexistent-' + Date.now() + '.sock');
   const res = await withDaemon((c) => c.call('ping'), missing);
   assert.equal(res, undefined);
 });

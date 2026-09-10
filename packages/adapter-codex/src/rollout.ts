@@ -1,7 +1,7 @@
 import { createReadStream, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
-import type { HistoryEntry } from '@anylark/core';
+import type { HistoryEntry } from '@instead/core';
 
 /**
  * Codex rollout JSONL 读取（best-effort，见 docs/spikes/05-codex-adapter.md §1.7）。

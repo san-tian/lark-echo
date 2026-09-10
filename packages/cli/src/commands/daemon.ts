@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { readFileSync, unlinkSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { paths } from '@anylark/core';
+import { paths } from '@instead/core';
 import type { Args } from '../args.ts';
 import { fail, ok, print } from '../io.ts';
 import { pingDaemon, waitForDaemon, waitForDaemonGone, withDaemon } from '../daemon-client.ts';

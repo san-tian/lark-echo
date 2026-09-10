@@ -1,5 +1,5 @@
 {
-  "name": "@anylark/adapter-codex",
+  "name": "@instead/adapter-codex",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -7,6 +7,6 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@anylark/core": "0.0.1"
+    "@instead/core": "0.0.1"
   }
 }

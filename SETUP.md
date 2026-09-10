@@ -8,30 +8,30 @@
 ## 第一步：把这段提示词复制给 agent
 
 ```
-帮我在这台机器上配置 anylark —— 一个把飞书群聊接到本地 agent 会话的网关。
-仓库：https://github.com/san-tian/anylark
+帮我在这台机器上配置 instead —— 一个把飞书群聊接到本地 agent 会话的网关。
+仓库：https://github.com/san-tian/instead
 
 请按顺序做，每一步都先告诉我你要做什么、做完告诉我结果：
 
 1. 安装：
-   git clone https://github.com/san-tian/anylark.git ~/anylark
-   cd ~/anylark && npm install --include=dev
-   cd packages/cli && npm link          # 让 anylark 进入全局 PATH
-   验证：anylark --help
+   git clone https://github.com/san-tian/instead.git ~/instead
+   cd ~/instead && npm install --include=dev
+   cd packages/cli && npm link          # 让 instead 进入全局 PATH
+   验证：instead --help
 
 2. 看这台机器有没有 tailscale（`tailscale ip -4`）。有的话记下 tailnet 地址，
    后面控制台会默认监听它，我就能从别的设备打开。
 
 3. 让我去飞书开放平台建一个自建应用（下面是「人工步骤 1」）。建好后我会把 app_id 给你。
 
-4. 拿到 app_id 后，叫我**自己**在终端运行 `anylark connect <app_id>` 并输入 App Secret。
+4. 拿到 app_id 后，叫我**自己**在终端运行 `instead connect <app_id>` 并输入 App Secret。
    不要让我把 secret 发给你，也不要把它写进任何命令、文件或日志。
 
-5. 跑 `anylark daemon start`，然后 `anylark doctor`。
+5. 跑 `instead daemon start`，然后 `instead doctor`。
    如果 doctor 报缺权限，读它返回的原始错误 msg，告诉我具体该在开放平台开哪个权限，不要猜。
 
-6. 跑 `anylark ui --no-open`，把打印出来的地址给我。
-   然后帮我把机器人所在的群绑定到一条会话上（用控制台，或 `anylark bind --owner <选我自己>`）。
+6. 跑 `instead ui --no-open`，把打印出来的地址给我。
+   然后帮我把机器人所在的群绑定到一条会话上（用控制台，或 `instead bind --owner <选我自己>`）。
 
 7. 让我在群里 @机器人 发一句话，确认能收到回复。收不到就读 daemon 日志排查。
 
@@ -47,7 +47,7 @@
 
 ### 1. 建一个飞书自建应用（约 2 分钟）
 
-1. 打开 <https://open.feishu.cn/app> → **创建企业自建应用**（名字随便，比如 `Anylark`）
+1. 打开 <https://open.feishu.cn/app> → **创建企业自建应用**（名字随便，比如 `Instead`）
 2. 左侧 **添加应用能力** → 添加 **机器人**
 3. 左侧 **权限管理** → 搜索并勾选这 4 个：
    - `im:message`
@@ -67,7 +67,7 @@
 agent 会叫你跑这条命令，你自己输入 secret（不回显、不进 shell 历史）：
 
 ```bash
-anylark connect cli_xxxxxxxx
+instead connect cli_xxxxxxxx
 App Secret: ********        # 粘贴后回车，屏幕上不会有任何显示
 ```
 
@@ -78,7 +78,7 @@ App Secret: ********        # 粘贴后回车，屏幕上不会有任何显示
 ## 完事之后
 
 ```bash
-anylark ui            # 打开控制台，在里面选群 / 选目录 / 选会话 / 选模型，点「绑定」
+instead ui            # 打开控制台，在里面选群 / 选目录 / 选会话 / 选模型，点「绑定」
 ```
 
 绑定后，在群里 @机器人 说话，它就会用你选的那条 agent 会话回答，工具调用过程留在你的本地会话里。
@@ -88,15 +88,15 @@ anylark ui            # 打开控制台，在里面选群 / 选目录 / 选会�
 ## 手动版（不用 agent）
 
 ```bash
-git clone https://github.com/san-tian/anylark.git ~/anylark
-cd ~/anylark && npm install --include=dev
+git clone https://github.com/san-tian/instead.git ~/instead
+cd ~/instead && npm install --include=dev
 cd packages/cli && npm link
 
-anylark connect cli_xxxxxxxx     # 输入 App Secret
-anylark daemon start
-anylark doctor                   # 应该全绿
-anylark ui                       # 在浏览器里绑定，或：
-anylark bind --owner <你的 open_id>
+instead connect cli_xxxxxxxx     # 输入 App Secret
+instead daemon start
+instead doctor                   # 应该全绿
+instead ui                       # 在浏览器里绑定，或：
+instead bind --owner <你的 open_id>
 ```
 
 ---
@@ -105,16 +105,16 @@ anylark bind --owner <你的 open_id>
 
 | 现象 | 原因 / 处理 |
 |---|---|
-| `anylark: command not found` | 没跑 `npm link`，或当前终端没加载 `~/.bashrc`（`anylark --help` 在登录 shell 里试） |
-| 群里 @机器人 没反应 | 1) 群没绑定 → `anylark bindings`；2) 没 @ 到 → 检查是不是只回复了消息而不是 @；3) `anylark daemon logs` 看有没有 inbound |
+| `instead: command not found` | 没跑 `npm link`，或当前终端没加载 `~/.bashrc`（`instead --help` 在登录 shell 里试） |
+| 群里 @机器人 没反应 | 1) 群没绑定 → `instead bindings`；2) 没 @ 到 → 检查是不是只回复了消息而不是 @；3) `instead daemon logs` 看有没有 inbound |
 | 机器人回了「本群未绑定任何会话」 | 这个群还没绑，去控制台绑一下 |
 | 机器人回了「暂不支持话题群」 | 飞书话题群暂不支持，换普通群 |
 | `doctor` 报缺权限 | 按它给的原始错误 msg 去开放平台补对应权限，然后**重新发布版本** |
-| 控制台打不开 | 默认监听 tailnet 地址；没有 tailscale 时才是 `127.0.0.1`。用 `anylark ui --host 127.0.0.1` 强制本机 |
-| 想给控制台加鉴权 | `anylark ui --auth`（会带一个一次性 token 的 URL） |
+| 控制台打不开 | 默认监听 tailnet 地址；没有 tailscale 时才是 `127.0.0.1`。用 `instead ui --host 127.0.0.1` 强制本机 |
+| 想给控制台加鉴权 | `instead ui --auth`（会带一个一次性 token 的 URL） |
 
 ## 安全须知
 
-- **App Secret 只存在于本机** `~/.anylark/feishu/<app_id>.json`（权限 0600），不会进会话、不会进日志。
+- **App Secret 只存在于本机** `~/.instead/feishu/<app_id>.json`（权限 0600），不会进会话、不会进日志。
 - 控制台默认**无鉴权**，因为它监听的是你自己的 tailnet 地址（或本机）。**不要**用 `--host 0.0.0.0` 暴露到公网/局域网。
 - 群里触发 agent 时，agent 以你本地会话的权限执行 —— 它会跑 shell。默认只有**绑定者**能触发；绑定表单里的「群里所有人」请谨慎使用。

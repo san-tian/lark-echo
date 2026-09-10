@@ -827,13 +827,13 @@ export function renderPage(opts: PageOptions): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Anylark · 配置台</title>
+<title>Instead · 配置台</title>
 <style nonce="${nonce}">${CSS}</style>
 </head>
 <body data-csrf="${csrf}">
 <header>
   <div class="logo" aria-hidden="true">◈</div>
-  <h1>Anylark</h1>
+  <h1>Instead</h1>
   <div class="spacer"></div>
   <div id="daemon"></div>
 </header>

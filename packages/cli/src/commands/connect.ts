@@ -7,8 +7,8 @@ import {
   revokeCredential,
   saveCredential,
   type DoctorCheck,
-} from '@anylark/core';
-import { FeishuChannel, verifyCredentials } from '@anylark/channel-feishu';
+} from '@instead/core';
+import { FeishuChannel, verifyCredentials } from '@instead/channel-feishu';
 import { flag, type Args } from '../args.ts';
 import { fail, ok, print } from '../io.ts';
 import { withDaemon } from '../daemon-client.ts';
@@ -17,11 +17,11 @@ import { promptHidden } from '../tty.ts';
 export async function cmdConnect(args: Args): Promise<number> {
   const appId = args.positional[1];
   if (!appId) {
-    print('用法: anylark connect <app_id>');
+    print('用法: instead connect <app_id>');
     return 1;
   }
   const domain = (flag(args, 'domain') ?? 'feishu') as 'feishu' | 'lark';
-  const secret = process.env.ANYLARK_APP_SECRET ?? (await promptHidden('App Secret: '));
+  const secret = process.env.INSTEAD_APP_SECRET ?? (await promptHidden('App Secret: '));
   if (!secret) {
     fail('未输入 secret');
     return 1;
@@ -40,15 +40,15 @@ export async function cmdConnect(args: Args): Promise<number> {
   print('');
   print('下一步:');
   print('  1. 把机器人拉进目标群');
-  print('  2. anylark daemon start');
-  print('  3. anylark bind --owner <你的 open_id>   # 或在群里 @机器人 一次，从 anylark logs 里找到 open_id');
+  print('  2. instead daemon start');
+  print('  3. instead bind --owner <你的 open_id>   # 或在群里 @机器人 一次，从 instead logs 里找到 open_id');
   return 0;
 }
 
 export function cmdRevoke(args: Args): number {
   const appId = args.positional[1];
   if (!appId) {
-    print('用法: anylark revoke <app_id>');
+    print('用法: instead revoke <app_id>');
     return 1;
   }
   ok(revokeCredential(appId) ? `已删除 ${appId} 的本机凭据` : `${appId} 没有本机凭据`);
@@ -70,7 +70,7 @@ export async function cmdDoctor(args: Args): Promise<number> {
   }
   const appId = flag(args, 'app') ?? listCredentials()[0]?.appId;
   if (!appId) {
-    fail('本机没有飞书凭据，先运行: anylark connect <app_id>');
+    fail('本机没有飞书凭据，先运行: instead connect <app_id>');
     return 1;
   }
   const cred = loadCredential(appId);

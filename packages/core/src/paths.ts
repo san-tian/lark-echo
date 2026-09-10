@@ -3,27 +3,40 @@ import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 
 /**
- * 所有状态都落在 ~/.anylark/ 下（可用 ANYLARK_HOME 覆盖，测试用）。
+ * 所有状态都落在 ~/.instead/ 下（可用 INSTEAD_HOME 覆盖，测试用）。
  * 注意：会话 transcript 不在这里 —— 它归各 agent 自己管（DESIGN §3）。
  *
- * 改名自 lark-echo：`LARK_ECHO_HOME` 仍作为兼容读取，`~/.lark-echo/` 由
- * ensureHome() 一次性搬到 `~/.anylark/`。
+ * 改过两次名：`lark-echo` → `anylark` → `instead`（DESIGN §1.3.1）。
+ * 两个旧名的环境变量仍兼容读取，旧目录由 ensureHome() 一次性搬过来。
  */
-const LEGACY_HOME = () => join(homedir(), '.lark-echo');
+const DEFAULT_DIR = '.instead';
 
-export const anylarkHome = (): string =>
-  process.env.ANYLARK_HOME ?? process.env.LARK_ECHO_HOME ?? join(homedir(), '.anylark');
+/** 旧状态目录，**按新到旧排列** —— 迁移时取第一个存在的 */
+const LEGACY_DIRS = ['.anylark', '.lark-echo'];
+
+/** 旧环境变量，按新到旧排列 */
+const LEGACY_ENV = ['ANYLARK_HOME', 'LARK_ECHO_HOME'];
+
+const envHome = (): string | undefined => {
+  if (process.env.INSTEAD_HOME) return process.env.INSTEAD_HOME;
+  for (const key of LEGACY_ENV) {
+    if (process.env[key]) return process.env[key];
+  }
+  return undefined;
+};
+
+export const insteadHome = (): string => envHome() ?? join(homedir(), DEFAULT_DIR);
 
 export const paths = {
-  home: () => anylarkHome(),
-  stateDb: () => join(anylarkHome(), 'state.db'),
-  credentialsDir: () => join(anylarkHome(), 'feishu'),
-  credential: (appId: string) => join(anylarkHome(), 'feishu', `${appId}.json`),
-  socket: () => join(anylarkHome(), 'daemon.sock'),
-  pidFile: () => join(anylarkHome(), 'daemon.pid'),
-  logFile: () => join(anylarkHome(), 'daemon.log'),
-  uiToken: () => join(anylarkHome(), 'ui-token'),
-  inbox: (msgId: string) => join(anylarkHome(), 'feishu-inbox', msgId),
+  home: () => insteadHome(),
+  stateDb: () => join(insteadHome(), 'state.db'),
+  credentialsDir: () => join(insteadHome(), 'feishu'),
+  credential: (appId: string) => join(insteadHome(), 'feishu', `${appId}.json`),
+  socket: () => join(insteadHome(), 'daemon.sock'),
+  pidFile: () => join(insteadHome(), 'daemon.pid'),
+  logFile: () => join(insteadHome(), 'daemon.log'),
+  uiToken: () => join(insteadHome(), 'ui-token'),
+  inbox: (msgId: string) => join(insteadHome(), 'feishu-inbox', msgId),
 };
 
 /**
@@ -41,21 +54,27 @@ export function _migrateDir(legacy: string, target: string): boolean {
 }
 
 /**
- * 一次性把 `~/.lark-echo/` 搬成 `~/.anylark/`（改名迁移）。
- * 幂等：新目录已存在、或旧目录不存在时都直接返回 false。
- * 只在两者都是默认路径时做 —— 显式设了 *_HOME 就完全听环境变量的。
+ * 一次性把旧状态目录搬成 `~/.instead/`（改名迁移）。
+ * 幂等：新目录已存在、或没有任何旧目录时都直接返回 false。
+ * 只在用默认路径时做 —— 显式设了 *_HOME 就完全听环境变量的。
+ *
+ * 改过两次名，所以按 `.anylark` → `.lark-echo` 的顺序找第一个存在的搬过来。
+ * 取最新的那个：两个都在时 `.anylark` 才是有效状态，`.lark-echo` 是上一轮
+ * 迁移留下的残留。
  */
 export function migrateLegacyHome(): boolean {
-  if (process.env.ANYLARK_HOME ?? process.env.LARK_ECHO_HOME) return false;
-  const legacy = LEGACY_HOME();
-  const home = join(homedir(), '.anylark');
-  return _migrateDir(legacy, home);
+  if (envHome()) return false;
+  const home = join(homedir(), DEFAULT_DIR);
+  for (const dir of LEGACY_DIRS) {
+    if (_migrateDir(join(homedir(), dir), home)) return true;
+  }
+  return false;
 }
 
-/** 创建 ~/.anylark 并强制 0700（顺带做一次改名迁移） */
+/** 创建 ~/.instead 并强制 0700（顺带做一次改名迁移） */
 export function ensureHome(): string {
   migrateLegacyHome();
-  const home = anylarkHome();
+  const home = insteadHome();
   mkdirSync(home, { recursive: true, mode: 0o700 });
   try {
     chmodSync(home, 0o700);

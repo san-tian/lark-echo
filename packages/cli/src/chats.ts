@@ -1,5 +1,5 @@
-import { listCredentials, loadCredential } from '@anylark/core';
-import { FeishuChannel } from '@anylark/channel-feishu';
+import { listCredentials, loadCredential } from '@instead/core';
+import { FeishuChannel } from '@instead/channel-feishu';
 import { withDaemon } from './daemon-client.ts';
 
 export interface ChatSummary {
@@ -16,6 +16,6 @@ export async function listChats(): Promise<ChatSummary[]> {
   if (remote) return remote;
   const appId = listCredentials()[0]?.appId;
   const cred = appId ? loadCredential(appId) : undefined;
-  if (!cred) throw new Error('本机没有飞书凭据，先运行: anylark connect <app_id>');
+  if (!cred) throw new Error('本机没有飞书凭据，先运行: instead connect <app_id>');
   return new FeishuChannel({ appId: cred.appId, appSecret: cred.appSecret }).listChats();
 }

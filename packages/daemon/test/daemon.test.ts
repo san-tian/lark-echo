@@ -3,12 +3,12 @@ import assert from 'node:assert/strict';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openDb } from '@anylark/core';
-import { FakeAdapter, FakeChannel } from '@anylark/core/testing';
+import { openDb } from '@instead/core';
+import { FakeAdapter, FakeChannel } from '@instead/core/testing';
 import { IpcClient } from '../src/ipc.ts';
 import { Daemon } from '../src/server.ts';
 
-const tmpSock = () => join(mkdtempSync(join(tmpdir(), 'anylark-daemon-')), 'd.sock');
+const tmpSock = () => join(mkdtempSync(join(tmpdir(), 'instead-daemon-')), 'd.sock');
 
 async function waitFor(predicate: () => boolean, timeoutMs = 2000): Promise<void> {
   const deadline = Date.now() + timeoutMs;

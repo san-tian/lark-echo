@@ -1,5 +1,5 @@
 {
-  "name": "@anylark/daemon",
+  "name": "@instead/daemon",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -7,10 +7,10 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@anylark/core": "0.0.1",
-    "@anylark/ui": "0.0.1",
-    "@anylark/adapter-pi": "0.0.1",
-    "@anylark/adapter-claude": "0.0.1",
-    "@anylark/adapter-codex": "0.0.1"
+    "@instead/core": "0.0.1",
+    "@instead/ui": "0.0.1",
+    "@instead/adapter-pi": "0.0.1",
+    "@instead/adapter-claude": "0.0.1",
+    "@instead/adapter-codex": "0.0.1"
   }
 }

@@ -9,15 +9,15 @@ import {
   openDb,
   paths,
   setLogSink,
-} from '@anylark/core';
-import { PiAdapter } from '@anylark/adapter-pi';
-import { ClaudeAdapter } from '@anylark/adapter-claude';
-import { CodexAdapter, type SandboxMode } from '@anylark/adapter-codex';
-import { FeishuChannel } from '@anylark/channel-feishu';
+} from '@instead/core';
+import { PiAdapter } from '@instead/adapter-pi';
+import { ClaudeAdapter } from '@instead/adapter-claude';
+import { CodexAdapter, type SandboxMode } from '@instead/adapter-codex';
+import { FeishuChannel } from '@instead/channel-feishu';
 import { Daemon } from './server.ts';
 
 /**
- * daemon 入口：`anylark daemon run`（前台）或 `daemon start`（后台，输出重定向到日志）。
+ * daemon 入口：`instead daemon run`（前台）或 `daemon start`（后台，输出重定向到日志）。
  */
 export async function runDaemon(): Promise<void> {
   const migrated = migrateLegacyHome();
@@ -28,11 +28,11 @@ export async function runDaemon(): Promise<void> {
     process.stderr.write(line + '\n');
     logStream.write(line + '\n');
   });
-  if (migrated) logger.info('migrated state dir ~/.lark-echo → ~/.anylark', { home: paths.home() });
+  if (migrated) logger.info('migrated legacy state dir → ~/.instead', { home: paths.home() });
 
-  const appId = process.env.ANYLARK_APP_ID ?? listCredentials()[0]?.appId;
+  const appId = process.env.INSTEAD_APP_ID ?? listCredentials()[0]?.appId;
   if (!appId) {
-    logger.error('no feishu app configured; run: anylark connect <app_id>');
+    logger.error('no feishu app configured; run: instead connect <app_id>');
     process.exit(1);
   }
   const cred = loadCredential(appId);

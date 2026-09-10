@@ -27,7 +27,7 @@ import {
   type TurnHandle,
   type TurnResult,
   type UserMessage,
-} from '@anylark/core';
+} from '@instead/core';
 import {
   assistantText,
   deltaText,

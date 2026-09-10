@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { IpcClient, IpcServer } from '../src/ipc.ts';
 
-const sock = () => join(mkdtempSync(join(tmpdir(), 'anylark-ipc-')), 'd.sock');
+const sock = () => join(mkdtempSync(join(tmpdir(), 'instead-ipc-')), 'd.sock');
 
 test('IPC 请求/响应往返', async () => {
   const path = sock();

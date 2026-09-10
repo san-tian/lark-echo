@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { TurnEvent, TurnResult } from '@anylark/core';
+import type { TurnEvent, TurnResult } from '@instead/core';
 import { CodexAdapter, buildPrompt } from '../src/adapter.ts';
 import { buildTurnArgs, resolveCodexCommand } from '../src/codex-cli.ts';
 import { codexItem, parseCodexLine, toolLabel } from '../src/events.ts';
@@ -129,7 +129,7 @@ test('parseCodexLine / toolLabel 解析真实事件形状', () => {
 // ------------------------------------------------------------------ rollout history
 
 test('rollout：按 thread id 找文件并用 ordinal 作游标', async () => {
-  const dir = tempDir('anylark-codex-rollout-');
+  const dir = tempDir('instead-codex-rollout-');
   const day = join(dir, '2026', '09', '09');
   mkdirSync(day, { recursive: true });
   const file = join(day, `rollout-2026-09-09T14-02-28-${FAKE_THREAD_ID}.jsonl`);
@@ -180,7 +180,7 @@ test('rollout：按 thread id 找文件并用 ordinal 作游标', async () => {
 // ------------------------------------------------------------------ fake CLI contract
 
 test('契约：解析 codex --json 事件流并落到 final', { timeout: 30_000 }, async () => {
-  const dir = tempDir('anylark-codex-fake-ok-');
+  const dir = tempDir('instead-codex-fake-ok-');
   const adapter = new CodexAdapter({
     command: writeFakeCodex(dir, 'ok'),
     sessionsDir: join(dir, 'sessions'),
@@ -220,7 +220,7 @@ test('契约：解析 codex --json 事件流并落到 final', { timeout: 30_000 
 });
 
 test('契约：abort() 终止子进程并结算 aborted', { timeout: 30_000 }, async () => {
-  const dir = tempDir('anylark-codex-fake-hang-');
+  const dir = tempDir('instead-codex-fake-hang-');
   const adapter = new CodexAdapter({ command: writeFakeCodex(dir, 'hang'), sessionsDir: join(dir, 'sessions') });
   const handle = await adapter.start({ cwd: dir });
   const turn = await adapter.send(handle, { text: 'hang please' });
@@ -233,7 +233,7 @@ test('契约：abort() 终止子进程并结算 aborted', { timeout: 30_000 }, a
 });
 
 test('契约：codex 报错时结算 error 并发 error 事件', { timeout: 30_000 }, async () => {
-  const dir = tempDir('anylark-codex-fake-fail-');
+  const dir = tempDir('instead-codex-fake-fail-');
   const adapter = new CodexAdapter({ command: writeFakeCodex(dir, 'fail'), sessionsDir: join(dir, 'sessions') });
   const handle = await adapter.start({ cwd: dir });
   const events: TurnEvent[] = [];
@@ -285,7 +285,7 @@ async function runTurnWithRetry(
 }
 
 test('契约：真实 codex 起一轮，最终文本含 OK，且 rollout 可读', { skip: !hasCodex, timeout: 300_000 }, async (t) => {
-  const cwd = tempDir('anylark-codex-real-');
+  const cwd = tempDir('instead-codex-real-');
   const adapter = new CodexAdapter({
     command: codexCommand,
     sandboxMode: 'read-only',
@@ -315,7 +315,7 @@ test('契约：真实 codex 起一轮，最终文本含 OK，且 rollout 可读'
 
 test('契约：resume 既有 thread 能记得上一轮', { skip: !hasCodex, timeout: 420_000 }, async (t) => {
   // 自包含：先造一条 thread，再用新 adapter 实例 resume 它
-  const cwd = tempDir('anylark-codex-resume-');
+  const cwd = tempDir('instead-codex-resume-');
   const adapter1 = new CodexAdapter({ command: codexCommand, sandboxMode: 'read-only', turnTimeoutMs: 60_000 });
   const h1 = await adapter1.start({ cwd });
   const first = await runTurnWithRetry(adapter1, h1, 'Reply with exactly: ONE');

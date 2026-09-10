@@ -6,7 +6,7 @@ import {
   type Logger,
   type SessionDriver,
   type SessionRef,
-} from '@anylark/core';
+} from '@instead/core';
 
 export interface SessionPoolOptions {
   adapters: Partial<Record<AgentId, AgentAdapter>>;

@@ -13,7 +13,7 @@ import {
   type TurnHandle,
   type TurnResult,
   type UserMessage,
-} from '@anylark/core';
+} from '@instead/core';
 import { PiRpcClient, type PiEvent } from './rpc-client.ts';
 import { lazyServers, readMcpServers } from './mcp-config.ts';
 
@@ -27,7 +27,7 @@ export interface PiAdapterOptions {
    * 真要隔离时才设为 true。
    */
   isolateExtensions?: boolean;
-  /** 需要显式加载的扩展路径（M0b 的 anylark 扩展） */
+  /** 需要显式加载的扩展路径（M0b 的 instead 扩展） */
   extensionPaths?: string[];
   /**
    * 默认 true：session 就绪后，对非 eager 的 MCP server 发 `/mcp:start <name>`。
