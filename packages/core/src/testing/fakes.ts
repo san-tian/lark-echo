@@ -108,6 +108,8 @@ export class FakeAdapter implements AgentAdapter {
   private readonly fail: boolean;
   private readonly sessionId: string;
   private started = 0;
+  /** 每次 start 的入参，便于断言池子往里传了什么 */
+  readonly startCalls: StartOptions[] = [];
 
   constructor(opts: FakeAdapterOptions = {}) {
     this.reply = opts.reply ?? 'fake reply';
@@ -118,6 +120,7 @@ export class FakeAdapter implements AgentAdapter {
 
   async start(opts: StartOptions): Promise<AgentSessionHandle> {
     this.started += 1;
+    this.startCalls.push(opts);
     return {
       ref: {
         agent: 'pi',

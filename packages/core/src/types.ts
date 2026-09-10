@@ -129,6 +129,12 @@ export interface StartOptions {
   cwd: string;
   sessionId?: string;
   model?: string;
+  /**
+   * 这条会话**应当已经存在**（接管已有会话，或已学到真实 id）。
+   * adapter 找不到它时必须硬失败，而不是**静默新建**一条同 id 的空会话 ——
+   * 后者在飞书里表现为「绑定了会话，但 bot 完全没有上下文」。
+   */
+  expectExisting?: boolean;
 }
 
 /** adapter 返回的会话句柄（各 adapter 可扩展） */

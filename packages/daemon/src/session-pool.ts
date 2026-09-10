@@ -18,6 +18,12 @@ export interface SessionPoolOptions {
   resolveSessionId?: (logicalId: string, agent: AgentId) => string | undefined;
   /** adapter 学到真实 id 后回调（持久化别名） */
   onSessionId?: (logicalId: string, agent: AgentId, realId: string) => void;
+  /**
+   * 这条会话应当**已经存在**吗（接管已有会话 / 已学到真实 id）。
+   * 返回 true 时传给 adapter.start({ expectExisting })，让它找不到就硬失败，
+   * 而不是静默新建一条空会话（§10.4）。
+   */
+  expectsExisting?: (logicalId: string, agent: AgentId) => boolean;
   logger?: Logger;
   now?: () => number;
 }
@@ -70,6 +76,7 @@ export class SessionPool implements SessionDriver {
         cwd: ref.cwd,
         ...(startSessionId ? { sessionId: startSessionId } : {}),
         ...(model ? { model } : {}),
+        ...(this.opts.expectsExisting?.(ref.sessionId, ref.agent) ? { expectExisting: true } : {}),
       });
       entry = {
         ref,

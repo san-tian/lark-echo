@@ -125,6 +125,21 @@ export class PiAdapter implements AgentAdapter {
       sessionId?: string;
       sessionFile?: string;
     };
+    // 「接管已有会话」失败时 pi 会**静默**新建一条同 id 的空会话（只写 stderr），
+    // 症状是飞书那边「绑了会话但完全没有上下文」，所以这里硬失败。
+    if (opts.expectExisting) {
+      if (!client.missingSession()) await client.settleStderr();
+      const missing = client.missingSession();
+      if (missing) {
+        await client.close();
+        throw new Error(
+          `pi 在 ${opts.cwd} 下找不到会话 ${missing}（--session-id 只查当前项目目录）。` +
+            '会话文件里记录的 cwd 与绑定的目录不一致时就会这样。' +
+            '直接继续只会得到一条同 id 的空会话；因此这里中止，也还没发过任何消息，' +
+            '所以磁盘上不会留下痕迹。',
+        );
+      }
+    }
     const sessionId = stats?.sessionId ?? opts.sessionId ?? newTurnId();
     const ref: SessionRef = { agent: 'pi', sessionId, cwd: opts.cwd, driver: 'daemon' };
     this.sessions.set(sessionId, { ref, client, ...(stats?.sessionFile ? { sessionFile: stats.sessionFile } : {}) });

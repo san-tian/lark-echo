@@ -65,3 +65,19 @@ test('没有注册的 agent 会明确报错', async () => {
   const pool = new SessionPool({ adapters: {} });
   await assert.rejects(() => pool.acquire(ref()), /no adapter registered/);
 });
+
+test('expectsExisting 只在「本该已存在」的会话上传给 adapter（接管失败要硬失败）', async () => {
+  const adapter = new FakeAdapter();
+  const pool = new SessionPool({
+    adapters: { pi: adapter },
+    expectsExisting: (logicalId) => logicalId === 'sess-old',
+  });
+  await pool.acquire(ref('sess-old'));
+  await pool.acquire(ref('sess-new'));
+  assert.deepEqual(
+    adapter.startCalls.map((o) => o.expectExisting),
+    [true, undefined],
+    '接管已有会话要带 expectExisting，新建的不带',
+  );
+  await pool.closeAll();
+});

@@ -91,6 +91,9 @@ export class Daemon {
       resolveSessionId: (logicalId) => getSessionAlias(this.db, logicalId),
       onSessionId: (logicalId, agent, realId) =>
         setSessionAlias(this.db, logicalId, agent, realId),
+      // 有别名 = 当初是按「接管已有会话」绑的（pi 写自指别名），或 adapter 已学到
+      // 真实 id（claude/codex）。两种情况下这条会话都**应该已经落盘**，找不到就是错。
+      expectsExisting: (logicalId) => getSessionAlias(this.db, logicalId) !== undefined,
       ...(opts.idleMs ? { idleMs: opts.idleMs } : {}),
     });
     this.dispatcher = new Dispatcher({

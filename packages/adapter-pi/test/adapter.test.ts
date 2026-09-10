@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PiAdapter } from '../src/adapter.ts';
@@ -57,9 +57,33 @@ test('契约：session 可续跑（同一 sessionId 再次 start 能看到历史
   await adapter1.stop(h1);
 
   const adapter2 = new PiAdapter({ sessionDir: dir, isolateExtensions: true });
-  const h2 = await adapter2.start({ cwd: process.cwd(), sessionId: 'contract-002' });
+  // expectExisting：这条会话确实在，所以续跑能通过自检
+  const h2 = await adapter2.start({
+    cwd: process.cwd(),
+    sessionId: 'contract-002',
+    expectExisting: true,
+  });
   const entries: string[] = [];
   for await (const e of adapter2.history(h2)) entries.push(`${e.role}:${e.text}`);
   assert.ok(entries.some((e) => e.includes('ONE')), `续跑应能看到历史，实际：${entries.join('|')}`);
   await adapter2.stop(h2);
+});
+
+test('契约：expectExisting 遇到不存在的会话就报错，不再静默新建', { skip: !hasPi, timeout: 60_000 }, async () => {
+  const dir = withSessionDir();
+  const adapter = new PiAdapter({ sessionDir: dir, isolateExtensions: true });
+  await assert.rejects(
+    () => adapter.start({ cwd: process.cwd(), sessionId: 'no-such-session', expectExisting: true }),
+    /找不到会话 no-such-session/,
+  );
+  // 失败得早：还没发过任何消息，所以磁盘上不该留下东西（pi 只在有内容时落盘）
+  assert.deepEqual(readdirSync(dir), []);
+});
+
+test('契约：不带 expectExisting 时依然是新建（群里首次绑定走这条）', { skip: !hasPi, timeout: 60_000 }, async () => {
+  const dir = withSessionDir();
+  const adapter = new PiAdapter({ sessionDir: dir, isolateExtensions: true });
+  const handle = await adapter.start({ cwd: process.cwd(), sessionId: 'brand-new-001' });
+  assert.equal(handle.ref.sessionId, 'brand-new-001');
+  await adapter.stop(handle);
 });
