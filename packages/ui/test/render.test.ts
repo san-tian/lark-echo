@@ -137,11 +137,42 @@ test('mirror 已彻底移除（决策 17 废弃）', () => {
   assert.equal(/mirror/i.test(page()), false);
 });
 
-test('向导是分步的，四步齐全', () => {
+test('向导五步齐全，且「选会话」排在目录与 agent 之后', () => {
   const js = clientScript(page());
   const m = js.match(/STEPS\s*=\s*\[([^\]]+)\]/);
   assert.ok(m, '找不到 STEPS');
-  assert.equal(m[1]!.split(',').length, 4, '向导应为 4 步');
+  const steps = m[1]!.split(',').map((s) => s.trim().replace(/^['"]|['"]$/g, ''));
+  assert.equal(steps.length, 5, `向导应为 5 步，实际 ${steps.join(' → ')}`);
+  const iDir = steps.indexOf('选目录');
+  const iAgent = steps.indexOf('选 agent');
+  const iSession = steps.indexOf('选会话');
+  assert.ok(
+    iSession > iDir && iSession > iAgent,
+    '可接管的会话取决于目录与 agent，必须排在它们之后',
+  );
+});
+
+test('接管已有会话时必须带 resumeExisting（否则 opaque adapter 静默新建）', () => {
+  // 回归：claude/codex 在 SessionPool 里只认 session_aliases。绑定时不写别名，
+  // 传给 adapter 的 sessionId 就是 undefined → 新建空会话，用户选的被忽略。
+  const js = clientScript(page());
+  assert.match(js, /resumeExisting:\s*resume/, 'bind 载荷要带 resumeExisting');
+  assert.match(js, /wiz\.resume && Boolean\(wiz\.sessionId\)/, 'resume 要同时要求选中了具体会话');
+  assert.match(js, /resume \? wiz\.sessionId : 'is-'/, '接管用选中的 id，新建才生成');
+});
+
+test('换 agent 会清掉已选会话（会话 id 不跨 agent 通用）', () => {
+  const js = clientScript(page());
+  const block = /a === 'w-agent'[\s\S]{0,500}?\n  \}/.exec(js)?.[0] ?? '';
+  assert.ok(block, '找不到 w-agent 分支');
+  assert.match(block, /wiz\.sessionId = ''/, '换 agent 要清 sessionId');
+  assert.match(block, /wiz\.resume = false/);
+});
+
+test('会话列表加载中时不放行下一步', () => {
+  // sessions === null 表示还在飞行中；此时点下一步会带着空选择走掉
+  const js = clientScript(page());
+  assert.match(js, /wiz\.step === 3 \? wiz\.sessions !== null/);
 });
 
 test('危险操作走确认对话框，不用原生 confirm', () => {

@@ -272,12 +272,15 @@ function renderConnections() {
 
 /* ══════════════ 向导：一步一个决定 ══════════════ */
 
-var STEPS = ['选群', '选目录', '选 agent', '谁能用'];
+/** 会话这步排在目录和 agent 之后 —— 有哪些会话可接管取决于这两个 */
+var STEPS = ['选群', '选目录', '选 agent', '选会话', '谁能用'];
 
 function openWizard() {
   wiz = {
     step: 0, chatId: '', chatName: '', cwd: '', dirs: [], parent: null,
-    agent: 'pi', model: '', owner: '', members: [], sessionId: '', q: ''
+    agent: 'pi', model: '', owner: '', members: [], q: '',
+    // sessionId 为空 = 新建；resume=true 表示接管已有会话
+    sessionId: '', resume: false, sessions: null
   };
   loadDirs('');
   render();
@@ -311,6 +314,24 @@ function loadModels(agent) {
     render();
     return modelsCache[agent];
   });
+}
+
+/** 该 cwd + agent 下已有的会话（可接管的）。null = 还在加载 */
+function loadSessions() {
+  if (!wiz) return Promise.resolve();
+  wiz.sessions = null;
+  render();
+  var want = wiz.agent + '|' + wiz.cwd;
+  return getJSON('/api/sessions?agent=' + wiz.agent + '&cwd=' + encodeURIComponent(wiz.cwd))
+    .then(function (list) {
+      // 用户可能在请求飞行途中改了 agent/目录，结果就作废了
+      if (!wiz || wiz.agent + '|' + wiz.cwd !== want) return;
+      wiz.sessions = list || [];
+      render();
+    })
+    .catch(function () {
+      if (wiz) { wiz.sessions = []; render(); }
+    });
 }
 
 function stepsBar() {
@@ -399,6 +420,35 @@ function stepAgent() {
     '<div class="field"><label for="w-model">模型</label>' + modelField + '</div>';
 }
 
+function stepSession() {
+  var newRow = '<button class="pick" data-act="w-session" data-id="" aria-selected="' +
+    (!wiz.resume) + '"><span class="grow"><div>开一条新会话</div>' +
+    '<div class="sub">空白上下文，ID 自动生成</div></span>' +
+    (!wiz.resume ? '<span class="tick">✓</span>' : '') + '</button>';
+
+  if (wiz.sessions === null) {
+    return '<div class="picker">' + newRow + '</div>' +
+      '<div class="dim" style="margin-top:12px;font-size:12.5px">' +
+      '<span class="spin"></span> 正在找 ' + esc(wiz.cwd) + ' 下已有的 ' + esc(wiz.agent) + ' 会话…</div>';
+  }
+
+  var rows = wiz.sessions.map(function (s) {
+    var sel = wiz.resume && wiz.sessionId === s.sessionId;
+    return '<button class="pick" data-act="w-session" data-id="' + esc(s.sessionId) + '" ' +
+      'aria-selected="' + sel + '"><span class="grow"><div class="mono">' + esc(s.sessionId) + '</div>' +
+      '<div class="sub">最后活动 ' + esc(new Date(s.mtime).toLocaleString()) + '</div></span>' +
+      (sel ? '<span class="tick">✓</span>' : '') + '</button>';
+  }).join('');
+
+  var note = wiz.sessions.length
+    ? '接管已有会话 = 群里 @机器人 就是接着这条会话继续说，它记得之前的上下文。'
+    : '这个目录下没有找到已有的 ' + wiz.agent + ' 会话' +
+      (wiz.agent === 'codex' ? '（codex 按 rollout 首行的 cwd 匹配，只看最近 200 条）' : '') + '。';
+
+  return '<div class="picker">' + newRow + rows + '</div>' +
+    '<div class="hint" style="margin-top:10px;font-size:11.5px;color:var(--dim-2)">' + esc(note) + '</div>';
+}
+
 function stepOwner() {
   var rows = [
     '<button class="pick" data-act="w-owner" data-id="*" aria-selected="' + (wiz.owner === '*') + '">' +
@@ -416,6 +466,9 @@ function stepOwner() {
       '<span>群 <b>' + esc(wiz.chatName || shortId(wiz.chatId)) + '</b></span>' +
       '<span>目录 <b class="mono">' + esc(wiz.cwd) + '</b></span>' +
       '<span>agent <b>' + esc(wiz.agent) + '</b>' + (wiz.model ? ' · 模型 <b>' + esc(wiz.model) + '</b>' : '') + '</span>' +
+      '<span>会话 ' + (wiz.resume
+        ? '<b class="mono">' + esc(wiz.sessionId) + '</b> <span class="ok">（接管已有，保留上下文）</span>'
+        : '<b>新建</b>') + '</span>' +
     '</div></fieldset>';
   return '<div class="picker">' + rows.join('') + '</div>' +
     (wiz.members.length ? '' : '<div class="hint" style="margin-top:8px;font-size:11.5px;color:var(--dim-2)">' +
@@ -425,8 +478,12 @@ function stepOwner() {
 
 function renderWizard() {
   var body = wiz.step === 0 ? stepChat() : wiz.step === 1 ? stepDir()
-    : wiz.step === 2 ? stepAgent() : stepOwner();
-  var canNext = wiz.step === 0 ? Boolean(wiz.chatId) : wiz.step === 3 ? Boolean(wiz.owner) : true;
+    : wiz.step === 2 ? stepAgent() : wiz.step === 3 ? stepSession() : stepOwner();
+  // 选群必须选中；选会话时还在加载就先别放行；最后一步要选 owner
+  var canNext = wiz.step === 0 ? Boolean(wiz.chatId)
+    : wiz.step === 3 ? wiz.sessions !== null
+    : wiz.step === 4 ? Boolean(wiz.owner)
+    : true;
   var lastStep = wiz.step === STEPS.length - 1;
   return '<div class="card">' + stepsBar() + body +
     '<div class="wizard-foot">' +
@@ -616,7 +673,8 @@ document.addEventListener('click', function (ev) {
   if (a === 'w-next') {
     wiz.step++;
     if (wiz.step === 2) loadModels(wiz.agent);
-    if (wiz.step === 3) loadMembers();
+    if (wiz.step === 3) loadSessions();
+    if (wiz.step === 4) loadMembers();
     render();
     return;
   }
@@ -629,9 +687,22 @@ document.addEventListener('click', function (ev) {
   if (a === 'w-cd') { loadDirs(el.dataset.path); return; }
   if (a === 'w-up') { loadDirs(wiz.parent || '/'); return; }
   if (a === 'w-agent') {
-    wiz.agent = el.dataset.id;
-    wiz.model = '';
+    if (wiz.agent !== el.dataset.id) {
+      wiz.agent = el.dataset.id;
+      wiz.model = '';
+      // 换了 agent，之前选的会话不再适用
+      wiz.sessionId = '';
+      wiz.resume = false;
+      wiz.sessions = null;
+    }
     loadModels(wiz.agent);
+    render();
+    return;
+  }
+  if (a === 'w-session') {
+    var sid = el.dataset.id || '';
+    wiz.sessionId = sid;
+    wiz.resume = Boolean(sid);
     render();
     return;
   }
@@ -639,16 +710,22 @@ document.addEventListener('click', function (ev) {
   if (a === 'w-submit') {
     var m = document.getElementById('w-model');
     var model = m ? m.value.trim() : '';
-    var sessionId = 'le-' + Date.now().toString(36);
+    // 接管已有会话就用它的 id；否则生成一个新的逻辑 id
+    var resume = wiz.resume && Boolean(wiz.sessionId);
+    var sessionId = resume ? wiz.sessionId : 'is-' + Date.now().toString(36);
+    var label = wiz.chatName || wiz.chatId;
     var payload = {
       chatId: wiz.chatId, sessionId: sessionId, agent: wiz.agent,
-      cwd: wiz.cwd, ownerOpenId: wiz.owner
+      cwd: wiz.cwd, ownerOpenId: wiz.owner,
+      // 让 daemon 写 session_aliases —— opaque 语义的 adapter 只认别名，
+      // 不写就会静默新建一条，用户选的会话被忽略
+      resumeExisting: resume
     };
     act(function () {
       return api('POST', '/api/bind', payload).then(function () {
         if (model) return api('POST', '/api/model', { sessionId: sessionId, model: model });
       });
-    }, '已连接 ' + (wiz.chatName || wiz.chatId)).then(function () {
+    }, resume ? '已接管会话 ' + sessionId : '已连接 ' + label).then(function () {
       wiz = null;
       tab = 'connections';
       render();

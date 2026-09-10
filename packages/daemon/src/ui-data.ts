@@ -14,6 +14,7 @@ import {
   listBindings,
   listPendingOutbound,
   newBindCode,
+  setSessionAlias,
   setSetting,
   setSessionModel,
   SETTINGS,
@@ -27,7 +28,7 @@ import {
   type MirrorMode,
   type ModelInfo,
 } from '@instead/core';
-import { readdir, stat } from 'node:fs/promises';
+import { open, readdir, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import type { SessionPool } from './session-pool.ts';
@@ -181,15 +182,25 @@ export class UiData {
     const log = this.deps.logger.child({ svc: 'ui', action: path });
     switch (path) {
       case '/api/bind': {
+        const agent = String(body.agent ?? 'pi') as AgentId;
+        const sessionId = String(body.sessionId ?? '');
         const binding = insertBinding(this.deps.db, {
           chatId: String(body.chatId ?? ''),
-          sessionId: String(body.sessionId ?? ''),
-          agent: String(body.agent ?? 'pi') as AgentId,
+          sessionId,
+          agent,
           cwd: String(body.cwd ?? process.cwd()),
           ownerOpenId: String(body.ownerOpenId ?? ''),
           mirrorMode: 'off' as MirrorMode,
           createdAt: Date.now(),
         });
+        // 接管一条**已存在**的会话时要顺手写别名。opaque 语义的 adapter
+        // （claude/codex）在 SessionPool 里只认 alias：没有这条记录就传
+        // undefined，于是静默新建一条，用户选的会话被无声忽略（§10.4）。
+        // pi 是 logical 语义、会回落到 ref.sessionId，写了也无害且更明确。
+        if (body.resumeExisting && sessionId) {
+          setSessionAlias(this.deps.db, sessionId, agent, sessionId);
+          log.info('bind resumes existing session', { sessionId, agent });
+        }
         log.info('bind created', { chatId: binding.chatId, sessionId: binding.sessionId });
         return { binding };
       }
@@ -335,6 +346,7 @@ export class UiData {
 
   /** 某目录下已有的 agent 会话，供会话选择器使用 */
   async listSessions(agent: AgentId, cwd: string): Promise<UiSessionOption[]> {
+    if (agent === 'codex') return listCodexSessions(cwd);
     const dir = sessionDirFor(agent, cwd);
     if (!dir) return [];
     const entries = await readdir(dir).catch(() => []);
@@ -361,11 +373,86 @@ function sessionDirFor(agent: AgentId, cwd: string): string | undefined {
     return join(homedir(), '.pi', 'agent', 'sessions', slug);
   }
   if (agent === 'claude') return join(homedir(), '.claude', 'projects', cwd.replace(/\//g, '-'));
-  return undefined; // codex 的 rollout 按日期分目录，暂不列举
+  return undefined; // codex 不按目录分，见 listCodexSessions
 }
 
 function sessionIdFromFile(agent: AgentId, name: string): string | undefined {
   if (agent === 'pi') return /_([^_]+)\.jsonl$/.exec(name)?.[1];
   if (agent === 'claude') return /^(.+)\.jsonl$/.exec(name)?.[1];
   return undefined;
+}
+
+const CODEX_SESSIONS_DIR = (): string =>
+  process.env.CODEX_HOME
+    ? join(process.env.CODEX_HOME, 'sessions')
+    : join(homedir(), '.codex', 'sessions');
+
+/**
+ * codex 的 rollout 按日期分目录（`YYYY/MM/DD/rollout-<ISO>-<thread_id>.jsonl`），
+ * 路径里没有 cwd —— 但首行 `payload.cwd` 有。所以按 mtime 取最近的一批，
+ * 只读首行来筛出属于这个目录的。
+ *
+ * 上限：最多看 200 个文件、返回 50 条。全量扫描（本机已有 183 个）不值得
+ * 为一个下拉付代价。
+ */
+async function listCodexSessions(cwd: string): Promise<UiSessionOption[]> {
+  const root = CODEX_SESSIONS_DIR();
+  const names = await readdir(root, { recursive: true, encoding: 'utf8' }).catch(() => []);
+  const files: { path: string; sessionId: string; mtime: number }[] = [];
+  for (const rel of names) {
+    const sessionId = /rollout-.*-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/i
+      .exec(rel)?.[1];
+    if (!sessionId) continue;
+    const path = join(root, rel);
+    const info = await stat(path).catch(() => undefined);
+    if (info) files.push({ path, sessionId, mtime: info.mtimeMs });
+  }
+  files.sort((a, b) => b.mtime - a.mtime);
+
+  const out: UiSessionOption[] = [];
+  for (const f of files.slice(0, 200)) {
+    if ((await codexRolloutCwd(f.path)) !== cwd) continue;
+    out.push({ sessionId: f.sessionId, mtime: f.mtime });
+    if (out.length >= 50) break;
+  }
+  return out;
+}
+
+/** 单行上限 1 MiB —— 够任何正常 rollout 头，又不至于让畸形文件吃满内存 */
+const MAX_HEADER_BYTES = 1024 * 1024;
+const HEADER_CHUNK = 64 * 1024;
+
+/**
+ * 只读 rollout 首行的 `payload.cwd`，不把整个文件读进内存。
+ *
+ * 必须读到换行才解析：首行是完整的 session meta，实测能到 ~23 KB。
+ * 早先这里用固定 4 KiB buffer，首行被截断 → JSON.parse 抛错 → 和「cwd 不匹配」
+ * 撞成同一个 undefined，于是 codex 的会话列表永远是空的。
+ */
+async function codexRolloutCwd(file: string): Promise<string | undefined> {
+  const handle = await open(file, 'r').catch(() => undefined);
+  if (!handle) return undefined;
+  try {
+    let acc = '';
+    let pos = 0;
+    const buf = Buffer.alloc(HEADER_CHUNK);
+    while (pos < MAX_HEADER_BYTES) {
+      const { bytesRead } = await handle.read(buf, 0, buf.length, pos);
+      if (bytesRead === 0) break; // EOF：文件只有一行且没有结尾换行
+      acc += buf.subarray(0, bytesRead).toString('utf8');
+      pos += bytesRead;
+      const nl = acc.indexOf('\n');
+      if (nl >= 0) {
+        acc = acc.slice(0, nl);
+        break;
+      }
+    }
+    if (!acc) return undefined;
+    const parsed = JSON.parse(acc) as { payload?: { cwd?: unknown } };
+    return typeof parsed.payload?.cwd === 'string' ? parsed.payload.cwd : undefined;
+  } catch {
+    return undefined; // 真正畸形的行：当作不匹配
+  } finally {
+    await handle.close();
+  }
 }
