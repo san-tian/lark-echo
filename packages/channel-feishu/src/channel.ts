@@ -155,23 +155,51 @@ export class FeishuChannel implements Channel {
     const chunks = splitText(msg.text, this.opts.chunkLimit ?? 4000);
     let messageId = '';
     for (const chunk of chunks) {
-      const content = JSON.stringify({ text: chunk });
-      const res = msg.replyTo
-        ? await this.client.im.message.reply({
-            path: { message_id: msg.replyTo },
-            data: { content, msg_type: 'text' },
-          })
-        : await this.client.im.message.create({
-            params: { receive_id_type: 'chat_id' },
-            data: { receive_id: chatId, msg_type: 'text', content },
-          });
-      const err = res as FeishuApiError;
-      if (err.code !== undefined && err.code !== 0) {
-        throw new Error(`feishu send failed: code=${err.code} msg=${err.msg ?? ''}`);
-      }
-      messageId = res.data?.message_id ?? messageId;
+      messageId = await this.sendText(chatId, chunk, msg.replyTo);
     }
     return { messageId };
+  }
+
+  /**
+   * 发一段文本：**富文本 post + `md` 元素**（OpenClaw 同款）—— 群里能直接看到代码块、
+   * 表格、加粗；纯 text 消息只会把 markdown 原样展出。
+   *
+   * reply 目标被撤回时降级成新消息而不是反复重试（`WITHDRAWN_REPLY_CODES`）。
+   */
+  private async sendText(chatId: string, chunk: string, replyTo?: string): Promise<string> {
+    const content = textContent(chunk);
+    if (replyTo) {
+      try {
+        return this.readMessageId(
+          await this.client.im.message.reply({
+            path: { message_id: replyTo },
+            data: { content, msg_type: 'post' },
+          }),
+          'feishu send failed',
+        );
+      } catch (err) {
+        if (!isWithdrawnReplyError(err)) throw err;
+        this.logger.warn('reply target gone, falling back to new message', { replyTo });
+      }
+    }
+    return this.readMessageId(
+      await this.client.im.message.create({
+        params: { receive_id_type: 'chat_id' },
+        data: { receive_id: chatId, msg_type: 'post', content },
+      }),
+      'feishu send failed',
+    );
+  }
+
+  private readMessageId(
+    res: { code?: number; msg?: string; data?: { message_id?: string } },
+    prefix: string,
+  ): string {
+    const err = res as FeishuApiError;
+    if (err.code !== undefined && err.code !== 0) {
+      throw new Error(`${prefix}: code=${err.code} msg=${err.msg ?? ''}`);
+    }
+    return res.data?.message_id ?? '';
   }
 
   /**
@@ -187,20 +215,40 @@ export class FeishuChannel implements Channel {
     const data = await readFile(att.localPath);
     const msgType = mediaMsgType(att.kind);
     const content = await this.uploadMedia(att, data, msgType);
-    const res = replyTo
-      ? await this.client.im.message.reply({
-          path: { message_id: replyTo },
-          data: { content, msg_type: msgType },
-        })
-      : await this.client.im.message.create({
-          params: { receive_id_type: 'chat_id' },
-          data: { receive_id: chatId, msg_type: msgType, content },
+    return this.sendMediaMessage(chatId, content, msgType, att, replyTo);
+  }
+
+  private async sendMediaMessage(
+    chatId: string,
+    content: string,
+    msgType: 'image' | 'file',
+    att: Attachment,
+    replyTo?: string,
+  ): Promise<string> {
+    if (replyTo) {
+      try {
+        return this.readMessageId(
+          await this.client.im.message.reply({
+            path: { message_id: replyTo },
+            data: { content, msg_type: msgType },
+          }),
+          'feishu media send failed',
+        );
+      } catch (err) {
+        if (!isWithdrawnReplyError(err)) throw err;
+        this.logger.warn('reply target gone, falling back to new message', {
+          replyTo,
+          attachment: att.name,
         });
-    const err = res as FeishuApiError;
-    if (err.code !== undefined && err.code !== 0) {
-      throw new Error(`feishu media send failed: code=${err.code} msg=${err.msg ?? ''}`);
+      }
     }
-    return res.data?.message_id ?? '';
+    return this.readMessageId(
+      await this.client.im.message.create({
+        params: { receive_id_type: 'chat_id' },
+        data: { receive_id: chatId, msg_type: msgType, content },
+      }),
+      'feishu media send failed',
+    );
   }
 
   /** 传资源并拼出消息体（`content` 就是发出去的那串 JSON） */
@@ -515,6 +563,27 @@ export class FeishuChannel implements Channel {
     }
   }
 }
+
+/**
+ * 被撤回/找不到的 reply 目标：飞书的两个错误码（OpenClaw 的 `WITHDRAWN_REPLY_ERROR_CODES`）。
+ * 碰上它不能重试 reply —— 那条消息已经不在了，重试永远失败，这一条就卡在出站队列里。
+ */
+const WITHDRAWN_REPLY_CODES = new Set([230011, 231003]);
+
+/** 纯函数，便于测试：一层一层挖到真正的错误码/文案 */
+export function isWithdrawnReplyError(err: unknown): boolean {
+  if (typeof err !== 'object' || err === null) return false;
+  const e = err as { code?: unknown; msg?: unknown; response?: { data?: { code?: unknown; msg?: unknown } }; cause?: unknown };
+  const code = e.code ?? e.response?.data?.code;
+  if (typeof code === 'number' && WITHDRAWN_REPLY_CODES.has(code)) return true;
+  const msg = typeof e.msg === 'string' ? e.msg : e.response?.data?.msg;
+  if (typeof msg === 'string' && /withdrawn|not found|已撤回/i.test(msg)) return true;
+  return e.cause ? isWithdrawnReplyError(e.cause) : false;
+}
+
+/** 文本 → 飞书富文本 post（`md` 元素交给飞书渲染：代码块/表格/加粗都能显示） */
+export const textContent = (chunk: string): string =>
+  JSON.stringify({ zh_cn: { content: [[{ tag: 'md', text: chunk }]] } });
 
 /**
  * 附件 → 飞书 `msg_type` / 消息体。纯函数，便于测试。
