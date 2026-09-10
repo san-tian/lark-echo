@@ -231,8 +231,7 @@ export class UiData {
         return { applied: 'next-start', model: model ?? null };
       }
       case '/api/session/release': {
-        await this.deps.pool.release(String(body.sessionId ?? ''));
-        return { released: true };
+        return { released: await this.deps.pool.release(String(body.sessionId ?? '')) };
       }
       case '/api/outbound/flush': {
         await this.deps.flushOutbound();

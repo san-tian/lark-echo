@@ -395,7 +395,12 @@ export class ClaudeAdapter implements AgentAdapter {
           requested: session.ref.sessionId,
           actual: sid,
         });
+        // ref.sessionId 是 sessions 的 key —— 改 ref 必须同时改 map，
+        // 否则后续 requireSession(handle) 拿新 id 去查会查不到（"session not started"）。
+        // 两个 key 都留：调用方手里的 handle 可能还是旧 id。
+        this.sessions.delete(session.ref.sessionId);
         session.ref.sessionId = sid;
+        this.sessions.set(sid, session);
       }
       this.logger.info('learned claude session id', {
         sessionId: session.ref.sessionId,

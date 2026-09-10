@@ -612,7 +612,7 @@ export function renderPage(opts: PageOptions): string {
         <legend>谁可以驱动这条会话</legend>
         <div class="row" style="margin:0">
           <label><input type="radio" name="owner-mode" value="me" checked> 仅我</label>
-          <select id="f-me" style="flex:1;min-width:220px"><option value="">先选群，再选成员</option></select>
+          <select id="f-me" aria-label="选择群成员作为会话拥有者" style="flex:1;min-width:220px"><option value="">先选群，再选成员</option></select>
           <label style="margin-left:12px"><input type="radio" name="owner-mode" value="all"> 群里所有人</label>
         </div>
       </fieldset>

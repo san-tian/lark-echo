@@ -275,6 +275,8 @@ test('适配器：假 CLI 跑通 delta/final/tool，第二轮带上 --resume，�
       liveAttach: 'lease',
       approvals: false,
       modelSwitch: 'restart',
+      // claude 自己生成 UUID 会话 id，只能拿学到的 id resume
+      sessionIdSemantics: 'opaque',
     });
 
     const turn = await adapter.send(handle, {
@@ -328,6 +330,24 @@ test('适配器：假 CLI 跑通 delta/final/tool，第二轮带上 --resume，�
     delete process.env.FAKE_ARGS_LOG;
     delete process.env.FAKE_PROMPT_LOG;
   }
+});
+
+test('学到的 session id 会重挂 sessions 索引，旧 handle 仍然可用', async () => {
+  // 回归：ref.sessionId 是 sessions 的 key，第一轮学到 claude 自己的 id 后
+  // 就地改了 ref 却没改 map，导致后续 requireSession 抛 "session not started"。
+  const dir = tempDir('anylark-claude-rekey-');
+  const command = writeFakeClaude(dir);
+  const adapter = new ClaudeAdapter({ command, projectsRoot: join(dir, 'projects') });
+  const handle = await adapter.start({ cwd: dir, sessionId: 'requested-id' });
+  await (await adapter.send(handle, { text: 'hi' })).settled;
+
+  // 假 CLI 报的是 fake-session-1，与请求的 id 不同 → 应已重挂
+  assert.equal(handle.ref.sessionId, 'fake-session-1', 'ref 应更新成学到的真实 id');
+  // 拿这个 handle 继续用不能炸（旧代码在这里抛 session not started）
+  const second = await (await adapter.send(handle, { text: '再来' })).settled;
+  assert.equal(second.error, undefined);
+  assert.equal(second.text, 'hello');
+  await adapter.stop(handle);
 });
 
 test('适配器：子进程非零退出且没有 result 事件 → error', async () => {

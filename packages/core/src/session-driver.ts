@@ -9,6 +9,11 @@ export interface SessionDriver {
   acquire(ref: SessionRef): Promise<{ adapter: AgentAdapter; handle: AgentSessionHandle }>;
   /** 标记活动，重置 idle 计时 */
   touch(ref: SessionRef): void;
-  /** 释放（idle 回收 / 接管） */
-  release(sessionId: string): Promise<void>;
+  /**
+   * 释放（idle 回收 / 接管）。
+   * @returns 是否真的释放了；false = 本来就没有这个会话在跑。
+   *   调用方（CLI / 配置台）要靠它区分「已停止」和「本来就没跑」，
+   *   否则会对着不存在的会话报成功。
+   */
+  release(sessionId: string): Promise<boolean>;
 }

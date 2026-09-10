@@ -117,9 +117,10 @@ export class SessionPool implements SessionDriver {
     }
   }
 
-  async release(sessionId: string): Promise<void> {
+  /** @returns 是否真的释放了；false = 本来就没有这个会话在跑 */
+  async release(sessionId: string): Promise<boolean> {
     const entry = this.entries.get(sessionId);
-    if (!entry) return;
+    if (!entry) return false;
     this.entries.delete(sessionId);
     try {
       await entry.adapter.stop(entry.handle);
@@ -127,6 +128,7 @@ export class SessionPool implements SessionDriver {
       this.opts.logger.warn('stop session failed', { sessionId, error: String(err) });
     }
     this.opts.logger.info('session released', { sessionId });
+    return true;
   }
 
   /** 回收 idle 会话；由 daemon 定时调用 */

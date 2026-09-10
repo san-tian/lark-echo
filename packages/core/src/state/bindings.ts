@@ -22,7 +22,8 @@ export class BindError extends Error {
   }
 }
 
-const MIRROR_MODES: MirrorMode[] = ['off', 'user', 'user+assistant', 'full'];
+/** 唯一定义处 —— CLI / daemon / UI 都从这里取，不要各自再抄一份 */
+export const MIRROR_MODES: readonly MirrorMode[] = ['off', 'user', 'user+assistant', 'full'];
 export const isMirrorMode = (v: string): v is MirrorMode => MIRROR_MODES.includes(v as MirrorMode);
 
 interface BindingRow {

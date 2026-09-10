@@ -4,4 +4,4 @@ SELF="$0"
 if command -v readlink >/dev/null 2>&1; then
   RESOLVED=$(readlink -f "$SELF" 2>/dev/null) && SELF="$RESOLVED"
 fi
-exec node --disable-warning=ExperimentalWarning "$(dirname "$SELF")/../src/index.ts" "$@"
+exec node --disable-warning=ExperimentalWarning "$(dirname "$SELF")/../src/cli.ts" "$@"

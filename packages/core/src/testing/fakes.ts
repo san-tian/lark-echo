@@ -220,7 +220,8 @@ export class FakeDriver implements SessionDriver {
   touch(ref: SessionRef): void {
     this.touched.push(ref);
   }
-  async release(sessionId: string): Promise<void> {
+  async release(sessionId: string): Promise<boolean> {
     this.released.push(sessionId);
+    return true;
   }
 }

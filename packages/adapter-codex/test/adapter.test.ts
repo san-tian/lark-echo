@@ -194,6 +194,8 @@ test('契约：解析 codex --json 事件流并落到 final', { timeout: 30_000 
     liveAttach: 'lease',
     approvals: false,
     modelSwitch: 'restart',
+    // codex 自己生成 thread id（ULID），只能拿学到的 id resume
+    sessionIdSemantics: 'opaque',
   });
 
   const events: TurnEvent[] = [];

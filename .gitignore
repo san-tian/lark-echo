@@ -4,3 +4,5 @@ dist/
 .DS_Store
 .anylark/
 tmp/
+# tsc -b 的增量构建缓存
+*.tsbuildinfo

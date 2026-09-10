@@ -188,8 +188,7 @@ export class Daemon {
       case 'session.list':
         return this.pool.list().map((s) => ({ ...s, model: getSessionModel(this.db, s.ref.sessionId) }));
       case 'session.release':
-        await this.pool.release(String(params.sessionId));
-        return { released: true };
+        return { released: await this.pool.release(String(params.sessionId)) };
       case 'session.setModel':
         return this.setModel(String(params.sessionId), params.model ? String(params.model) : undefined);
       case 'session.models':

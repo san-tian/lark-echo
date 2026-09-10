@@ -44,11 +44,20 @@ test('release 指定 session', async () => {
   const pool = new SessionPool({ adapters: { pi: new FakeAdapter() } });
   await pool.acquire(ref('s1'));
   await pool.acquire(ref('s2'));
-  await pool.release('s1');
+  assert.equal(await pool.release('s1'), true, '真的释放了要返回 true');
   assert.deepEqual(
     pool.list().map((s) => s.ref.sessionId),
     ['s2'],
   );
+  await pool.closeAll();
+});
+
+test('release 不存在的 session 返回 false（调用方要靠它区分「已停」和「本来没跑」）', async () => {
+  const pool = new SessionPool({ adapters: { pi: new FakeAdapter() } });
+  assert.equal(await pool.release('never-existed'), false);
+  await pool.acquire(ref('s1'));
+  assert.equal(await pool.release('s1'), true);
+  assert.equal(await pool.release('s1'), false, '重复 release 第二次是 false');
   await pool.closeAll();
 });
 
