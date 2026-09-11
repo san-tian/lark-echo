@@ -7,6 +7,7 @@ import {
   getBool,
   getInt,
   getSessionModel,
+  getSessionAlias,
   getSetting,
   insertBinding,
   issueBindCode,
@@ -75,6 +76,18 @@ export function resolveBrowsePath(input: string | undefined, roots: string[]): s
     );
   }
   return path;
+}
+
+/**
+ * 接管已有会话时写别名（§10.4.1）。**opaque 语义（claude/codex）的别名可能是学到的
+ * 真实 id** —— 覆盖成自指会让 resume 指向一个不存在的 thread（实测踩过：rebind 时
+ * 传逻辑 id，把 codex-test → 01a086e8 抹成了 codex-test → codex-test）。
+ * 规则：pi 直接写（无害且更明确）；opaque 只有没有别名时才写。
+ */
+export function upsertResumeAlias(db: Db, agent: AgentId, sessionId: string): void {
+  if (agent === 'pi' || !getSessionAlias(db, sessionId)) {
+    setSessionAlias(db, sessionId, agent, sessionId);
+  }
 }
 
 /** 目录选择器的参数错误：HTTP 层拿它回 400，而不是静默退回 HOME */
@@ -248,7 +261,7 @@ export class UiData {
         // undefined，于是静默新建一条，用户选的会话被无声忽略（§10.4）。
         // pi 是 logical 语义、会回落到 ref.sessionId，写了也无害且更明确。
         if (body.resumeExisting && sessionId) {
-          setSessionAlias(this.deps.db, sessionId, agent, sessionId);
+          upsertResumeAlias(this.deps.db, agent, sessionId);
           log.info('bind resumes existing session', { sessionId, agent });
         }
         log.info('bind created', { chatId: binding.chatId, sessionId: binding.sessionId });
