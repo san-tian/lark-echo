@@ -100,6 +100,8 @@ export interface FakeAdapterOptions {
   delayMs?: number;
   fail?: boolean;
   sessionId?: string;
+  /** 图片输入能力（决策 26），默认 true（像 pi/codex） */
+  images?: boolean;
 }
 
 interface ActiveTurn {
@@ -118,6 +120,7 @@ export class FakeAdapter implements AgentAdapter {
     approvals: false,
     modelSwitch: 'restart',
     sessionIdSemantics: 'logical',
+    images: true,
   };
   readonly received: UserMessage[] = [];
   readonly aborted: string[] = [];
@@ -136,6 +139,7 @@ export class FakeAdapter implements AgentAdapter {
     this.delayMs = opts.delayMs ?? 0;
     this.fail = opts.fail ?? false;
     this.sessionId = opts.sessionId ?? 'fake-session';
+    this.capabilities = { ...this.capabilities, images: opts.images ?? true };
   }
 
   async start(opts: StartOptions): Promise<AgentSessionHandle> {

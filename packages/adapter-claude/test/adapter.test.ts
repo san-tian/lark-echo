@@ -277,6 +277,8 @@ test('适配器：假 CLI 跑通 delta/final/tool，第二轮带上 --resume，�
       modelSwitch: 'restart',
       // claude 自己生成 UUID 会话 id，只能拿学到的 id resume
       sessionIdSemantics: 'opaque',
+      // 图片要走 --input-format stream-json（spike 4 缺口）
+      images: false,
     });
 
     const turn = await adapter.send(handle, {
