@@ -240,3 +240,10 @@ test('换模型对话框的提示区分在线/空闲/需重启三种', () => {
   assert.match(js, /会话在线，切换立即生效/);
   assert.match(js, /会话空闲，保存后下次启动生效/);
 });
+
+test('会话步的「新建」写明目录（用户才知道会落在哪）', () => {
+  const js = clientScript(page());
+  assert.match(js, /在这个目录下开一条新会话/);
+  assert.match(js, /空白上下文 · /);
+  assert.match(js, /ID 自动生成/);
+});

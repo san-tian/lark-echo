@@ -470,8 +470,8 @@ function stepAgent() {
 
 function stepSession() {
   var newRow = '<button class="pick" data-act="w-session" data-id="" aria-selected="' +
-    (!wiz.resume) + '"><span class="grow"><div>开一条新会话</div>' +
-    '<div class="sub">空白上下文，ID 自动生成</div></span>' +
+    (!wiz.resume) + '"><span class="grow"><div>＋ 在这个目录下开一条新会话</div>' +
+    '<div class="sub">空白上下文 · ' + esc(wiz.cwd) + ' · ID 自动生成</div></span>' +
     (!wiz.resume ? '<span class="tick">✓</span>' : '') + '</button>';
 
   if (wiz.sessions === null) {
