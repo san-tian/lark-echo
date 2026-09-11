@@ -28,6 +28,7 @@ const emit = (o) => process.stdout.write(JSON.stringify(o) + '\\n');
 emit({ type: 'thread.started', thread_id: ${JSON.stringify(FAKE_THREAD_ID)} });
 emit({ type: 'turn.started' });
 if (mode === 'hang') {
+  console.error('provider stuck: Reconnecting... 1/5');
   setInterval(() => {}, 1000);
 } else if (mode === 'fail') {
   emit({ type: 'error', message: 'boom from fake' });
@@ -196,6 +197,7 @@ test('契约：解析 codex --json 事件流并落到 final', { timeout: 30_000 
     modelSwitch: 'restart',
     // codex 自己生成 thread id（ULID），只能拿学到的 id resume
     sessionIdSemantics: 'opaque',
+    images: true,
   });
 
   const events: TurnEvent[] = [];
@@ -344,4 +346,19 @@ test('契约：resume 既有 thread 能记得上一轮', { skip: !hasCodex, time
   assert.equal(second.result.error, undefined, `resume 不应报错：${second.result.error ?? ''}`);
   assert.match(second.result.text, /ONE/);
   await adapter2.stop(h2);
+});
+
+test('契约：turn 超时错误带上 codex 的 stderr 尾巴（裸 timeout 没法排查）', { timeout: 30_000 }, async () => {
+  const dir = tempDir('instead-codex-fake-timeout-');
+  const adapter = new CodexAdapter({
+    command: writeFakeCodex(dir, 'hang'),
+    sessionsDir: join(dir, 'sessions'),
+    turnTimeoutMs: 800,
+  });
+  const handle = await adapter.start({ cwd: dir });
+  const turn = await adapter.send(handle, { text: 'hang please' });
+  const result = await turn.settled;
+  assert.match(String(result.error), /codex turn timeout after 800ms/);
+  assert.match(String(result.error), /provider stuck/, 'stderr 的线索要带出来');
+  await adapter.stop(handle);
 });

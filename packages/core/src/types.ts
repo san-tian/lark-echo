@@ -145,6 +145,11 @@ export interface AgentCapabilities {
    *   否则由 daemon 传 undefined 让它新建，并在首轮学完后通过 handle.ref.sessionId 回传。
    */
   sessionIdSemantics: 'logical' | 'opaque';
+  /**
+   * 图片输入能力（决策 26）：false 时 dispatcher 会把入站图片落盘、
+   * 只把路径写进正文，而不是整轮失败 —— agent 自己能用读文件工具看图。
+   */
+  images: boolean;
 }
 
 export interface StartOptions {

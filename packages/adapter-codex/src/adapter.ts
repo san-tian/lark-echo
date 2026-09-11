@@ -107,6 +107,8 @@ export class CodexAdapter implements AgentAdapter {
     modelSwitch: 'restart',
     // codex 自己生成 thread id（ULID），只能拿学到的 id resume
     sessionIdSemantics: 'opaque',
+    // codex 支持 -i <image_path>（writeImages）
+    images: true,
   };
 
   private readonly opts: CodexAdapterOptions;
@@ -418,7 +420,13 @@ export class CodexAdapter implements AgentAdapter {
     if (fromFile) text = fromFile; // `-o` 是权威最终文本（spike §1.2）
     this.cleanupTmp(active);
 
-    let error = active.timeoutError ?? active.spawnError;
+    let error = active.timeoutError;
+    if (error && active.stderr.trim()) {
+      // 超时本身不是根因 —— provider 断流/重连时 codex 会把线索写在 stderr，
+      // 裸一句「timeout」没法排查（本机真实踩过：glm 断流重连 5 次后超时）
+      error = `${error}: ${active.stderr.trim().slice(-500)}`;
+    }
+    error ??= active.spawnError;
     // `turn.completed` 之前的 error 事件可能是可恢复的：实测 provider 断流时 codex 会连发
     // {"type":"error","message":"Reconnecting... 1/5 ..."} 并自行重连成功。只有没完成的 turn 才算失败。
     if (!error && !active.completed) error = active.errorText;

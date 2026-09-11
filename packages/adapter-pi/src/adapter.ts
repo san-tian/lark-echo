@@ -88,6 +88,7 @@ export class PiAdapter implements AgentAdapter {
     // pi RPC 支持 set_model，可运行时切换（不用重启进程）
     modelSwitch: 'runtime',
     sessionIdSemantics: 'logical',
+    images: true,
   };
 
   private readonly opts: PiAdapterOptions;

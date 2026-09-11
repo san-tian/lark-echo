@@ -151,3 +151,31 @@ test('没有附件时不碰 channel.downloadAttachment', async () => {
   assert.equal(channel.downloadCount, 0);
   assert.equal(keyFor('oc_a'), 'feishu:chat:oc_a'); // 保持 helper 被使用
 });
+
+test('不支持图片的 agent（如 claude）：图片落盘给路径，而不是整轮失败（决策 26）', async () => {
+  const { channel, adapter, dispatcher } = (function () {
+    const db: Db = memoryDb();
+    const channel = new FakeChannel();
+    const adapter = new FakeAdapter({ reply: '看到了', images: false });
+    const dispatcher = new Dispatcher({ db, channel, driver: new FakeDriver(adapter), queue: new SessionQueue() });
+    insertBinding(db, {
+      chatId: 'oc_a', sessionId: 'sess-1', agent: 'claude', cwd: '/repo',
+      ownerOpenId: 'ou_owner', mirrorMode: 'off', createdAt: 1,
+    });
+    return { channel, adapter, dispatcher };
+  })();
+
+  const file = join(mediaDir(), 'shot.png');
+  writeFileSync(file, PNG);
+  channel.downloads.set('img_key_2', {
+    localPath: file, name: 'shot.png', mimeType: 'image/png', bytes: PNG.length,
+  });
+  await dispatcher.handleInbound(
+    inbound({ chatId: 'oc_a', text: '看看这张', attachments: [{ kind: 'image', key: 'img_key_2' }] }),
+  );
+  await waitFor(() => channel.sent.length > 0);
+
+  const sent = adapter.received[0]!;
+  assert.equal(sent.images, undefined, '不支持图片就不塞 images');
+  assert.match(sent.text, /\[图片: shot\.png 已保存到 /, '退化成路径说明，agent 自己能读');
+});

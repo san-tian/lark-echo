@@ -176,7 +176,7 @@ export class Dispatcher {
     try {
       const { adapter, handle } = await this.driver.acquire(ref);
       this.driver.touch(ref);
-      const media = await this.resolveAttachments(msg);
+      const media = await this.resolveAttachments(msg, adapter.capabilities.images !== false);
       const bootstrap = await this.ensureBootstrap(msg, ref);
       // 决策 22：开了才注入。默认关 —— 它把「你在某个群里」这件事告诉 agent，
       // 与决策 21 的中性注入相反，只在用户明确要 agent 能自己发文件时才开。
@@ -238,13 +238,14 @@ export class Dispatcher {
 
   /**
    * 决策 23：把入站附件拖下来。
-   * - 图片进 `UserMessage.images`（三个 adapter 都已支持：pi 塞 RPC、codex 落临时文件、claude 同理）
-   * - 其余只把落盘路径写进正文 —— agent 用自己的读文件工具就能拿到内容，
-   *   PDF/CSV/日志这类尤其有用。不搬进 cwd：那是绑定目录，不该被外部输入污染。
+   * - 图片 + adapter 支持图片 → 进 `UserMessage.images`（pi 塞 RPC、codex 落临时文件）
+   * - 其余（以及不支持图片的 agent，如 claude）→ 只把落盘路径写进正文 —— agent 用自己的
+   *   读文件工具就能拿到内容。不搬进 cwd：那是绑定目录，不该被外部输入污染。
    * - 任何一条失败只丢它自己（回一行说明），不拖垮这一轮
    */
   private async resolveAttachments(
     msg: InboundMessage,
+    supportImages: boolean,
   ): Promise<{ images: { data: string; mimeType: string }[]; note: string }> {
     const images: { data: string; mimeType: string }[] = [];
     const notes: string[] = [];
@@ -262,7 +263,7 @@ export class Dispatcher {
         notes.push(`[附件未能下载：${att.kind}]`);
         continue;
       }
-      if (att.kind === 'image') {
+      if (att.kind === 'image' && supportImages) {
         try {
           const buf = await readFile(saved.localPath);
           images.push({

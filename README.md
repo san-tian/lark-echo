@@ -28,8 +28,10 @@
 | agent | 状态 |
 |---|---|
 | [pi](https://pi.dev) | ✅ 已实现（`pi --mode rpc`） |
-| Claude Code | ⬜ 计划中 |
-| Codex CLI | ⬜ 计划中 |
+| Claude Code | ✅ 已实现（`claude -p --output-format stream-json`，一轮一进程、`--resume` 续跑）· 图片输入暂不支持（落盘后把路径交给它自己读） |
+| Codex CLI | ✅ 已实现（`codex exec --json`，thread id 学回后 resume） |
+
+三个 adapter 都有真实 CLI 的契约测试（本机 claude 15/15、codex 12/12、pi 9/9）。已知差异：只有 pi 支持运行时换模型（claude/codex 换模型要重启进程）；只有 pi 和 codex 支持图片输入；三者都无审批通道（无头下权限请求直接拒绝）。
 
 ## 状态
 
@@ -40,6 +42,8 @@
 - `packages/core` — 统一消息协议、绑定与一次性码、入站/出站持久队列、按会话串行队列、pendingWindow
 - `packages/daemon` — 本地 IPC（Unix socket + JSONL）、会话池、idle 回收
 - `packages/adapter-pi` — `pi --mode rpc` 子进程驱动
+- `packages/adapter-claude` — `claude -p --output-format stream-json` 一轮一进程，`--resume` 续跑
+- `packages/adapter-codex` — `codex exec --json`，thread id 学回后 resume
 - `packages/channel-feishu` — 飞书 WebSocket 长连接渠道、mention 门控、4000 字分片
 - `packages/cli` — `instead` 命令行
 
