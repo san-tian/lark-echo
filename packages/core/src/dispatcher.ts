@@ -70,6 +70,8 @@ export class Dispatcher {
   private readonly maxSendAttempts: number;
   private readonly bootstrap: { enabled: boolean; maxMessages: number; maxAgeDays: number };
   private readonly onTurnEvent?: (event: TurnEvent) => void;
+  /** 串行化 flush：deliver 与 daemon 定时器可能同时触发，不排队就会同一条发两遍 */
+  private flushChain: Promise<void> = Promise.resolve();
 
   constructor(opts: DispatcherOptions) {
     this.db = opts.db;
@@ -416,7 +418,13 @@ export class Dispatcher {
   }
 
   /** 重试挂起的出站消息；daemon 定时调用，测试里也可手动调用 */
-  async flushOutbound(limit = 50): Promise<void> {
+  flushOutbound(limit = 50): Promise<void> {
+    const run = this.flushChain.then(() => this.doFlush(limit));
+    this.flushChain = run.catch(() => undefined);
+    return run;
+  }
+
+  private async doFlush(limit: number): Promise<void> {
     for (const record of listPendingOutbound(this.db, limit)) {
       try {
         const res = await this.channel.send({

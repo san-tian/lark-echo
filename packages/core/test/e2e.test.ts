@@ -6,6 +6,7 @@ import { SessionQueue } from '../src/queue.ts';
 import { insertBinding } from '../src/state/bindings.ts';
 import { pendingWindowFor } from '../src/state/inbound.ts';
 import { setSetting, SETTINGS } from '../src/state/settings.ts';
+import { enqueueOutbound } from '../src/state/outbound.ts';
 import { FakeAdapter, FakeChannel, FakeDriver } from '../src/testing/index.ts';
 import type { Db } from '../src/state/db.ts';
 
@@ -163,6 +164,20 @@ test('端到端：设置 bootstrap.enabled=false 时不注入历史', async () =
   await waitFor(() => channel.sent.length > 0);
   const hist = adapter.received[0]!.context?.find((c) => c.kind === 'historical');
   assert.equal(hist, undefined, '关闭后不应注入');
+});
+
+test('并发 flushOutbound 不重复发送同一条出站消息（双发 bug 回归）', async () => {
+  const { db, channel, dispatcher } = setup();
+  channel.sendDelayMs = 30; // 让 send 挂一会儿，制造竞态窗口
+  enqueueOutbound(db, {
+    conversationKey: keyFor('oc_a'),
+    turnId: 'turn-1',
+    seq: 0,
+    text: 'hello',
+  });
+  await Promise.all([dispatcher.flushOutbound(), dispatcher.flushOutbound()]);
+  assert.equal(channel.sent.length, 1, '同一条 pending 只应发一次');
+  assert.equal(channel.sent[0]!.text, 'hello');
 });
 
 test('端到端：chat_tools 默认关 —— agent 拿不到 chat_id（决策 21）', async () => {

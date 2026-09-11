@@ -145,17 +145,19 @@ export class FeishuChannel implements Channel {
 
   async send(msg: OutboundMessage): Promise<OutboundResult> {
     const chatId = msg.conversationKey.replace(/^feishu:chat:/, '');
+    // 飞书幂等键：同一 turn 的同一 seq 重发时，飞书 24h 内去重（配 flush 串行化双保险）
+    const uuid = `${msg.turnId}:${msg.seq}`;
     if (msg.attachments?.length) {
       let lastId = '';
       for (const att of msg.attachments) {
-        lastId = await this.sendMedia(chatId, att, msg.replyTo);
+        lastId = await this.sendMedia(chatId, att, msg.replyTo, uuid);
       }
       return { messageId: lastId };
     }
     const chunks = splitText(msg.text, this.opts.chunkLimit ?? 4000);
     let messageId = '';
     for (const chunk of chunks) {
-      messageId = await this.sendText(chatId, chunk, msg.replyTo);
+      messageId = await this.sendText(chatId, chunk, msg.replyTo, uuid);
     }
     return { messageId };
   }
@@ -166,14 +168,14 @@ export class FeishuChannel implements Channel {
    *
    * reply 目标被撤回时降级成新消息而不是反复重试（`WITHDRAWN_REPLY_CODES`）。
    */
-  private async sendText(chatId: string, chunk: string, replyTo?: string): Promise<string> {
+  private async sendText(chatId: string, chunk: string, replyTo?: string, uuid?: string): Promise<string> {
     const content = textContent(chunk);
     if (replyTo) {
       try {
         return this.readMessageId(
           await this.client.im.message.reply({
             path: { message_id: replyTo },
-            data: { content, msg_type: 'post' },
+            data: { content, msg_type: 'post', ...(uuid ? { uuid } : {}) },
           }),
           'feishu send failed',
         );
@@ -185,7 +187,7 @@ export class FeishuChannel implements Channel {
     return this.readMessageId(
       await this.client.im.message.create({
         params: { receive_id_type: 'chat_id' },
-        data: { receive_id: chatId, msg_type: 'post', content },
+        data: { receive_id: chatId, msg_type: 'post', content, ...(uuid ? { uuid } : {}) },
       }),
       'feishu send failed',
     );
@@ -211,11 +213,12 @@ export class FeishuChannel implements Channel {
     chatId: string,
     att: Attachment,
     replyTo?: string,
+    uuid?: string,
   ): Promise<string> {
     const data = await readFile(att.localPath);
     const msgType = mediaMsgType(att.kind);
     const content = await this.uploadMedia(att, data, msgType);
-    return this.sendMediaMessage(chatId, content, msgType, att, replyTo);
+    return this.sendMediaMessage(chatId, content, msgType, att, replyTo, uuid);
   }
 
   private async sendMediaMessage(
@@ -224,13 +227,14 @@ export class FeishuChannel implements Channel {
     msgType: 'image' | 'file',
     att: Attachment,
     replyTo?: string,
+    uuid?: string,
   ): Promise<string> {
     if (replyTo) {
       try {
         return this.readMessageId(
           await this.client.im.message.reply({
             path: { message_id: replyTo },
-            data: { content, msg_type: msgType },
+            data: { content, msg_type: msgType, ...(uuid ? { uuid } : {}) },
           }),
           'feishu media send failed',
         );
@@ -245,7 +249,7 @@ export class FeishuChannel implements Channel {
     return this.readMessageId(
       await this.client.im.message.create({
         params: { receive_id_type: 'chat_id' },
-        data: { receive_id: chatId, msg_type: msgType, content },
+        data: { receive_id: chatId, msg_type: msgType, content, ...(uuid ? { uuid } : {}) },
       }),
       'feishu media send failed',
     );

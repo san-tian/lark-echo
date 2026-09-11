@@ -41,6 +41,8 @@ export class FakeChannel implements Channel {
   readonly downloads = new Map<string, DownloadedAttachment>();
   downloadCount = 0;
   failNextSend = false;
+  /** 每次 send 挂多久（测试并发 flush 竞态） */
+  sendDelayMs = 0;
   private onInbound?: (msg: InboundMessage) => void;
 
   async start(onInbound: (msg: InboundMessage) => void): Promise<void> {
@@ -53,6 +55,9 @@ export class FakeChannel implements Channel {
     if (this.failNextSend) {
       this.failNextSend = false;
       throw new Error('fake channel send failed');
+    }
+    if (this.sendDelayMs > 0) {
+      await new Promise((r) => setTimeout(r, this.sendDelayMs));
     }
     this.sent.push(msg);
     return { messageId: `fake-msg-${this.sent.length}` };
