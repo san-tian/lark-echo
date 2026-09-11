@@ -66,6 +66,27 @@ export function listBindingsBySession(db: Db, sessionId: string): Binding[] {
 }
 
 /**
+ * /new（决策 25）：把一个群切到另一条会话。agent / cwd / owner 都不动，只换 session_id。
+ * @returns 是否真的改到了（false = 这个群没绑定）
+ */
+export function updateBindingSession(
+  db: Db,
+  chatId: string,
+  sessionId: string,
+  now = Date.now(),
+): boolean {
+  return (
+    Number(
+      db.prepare('UPDATE bindings SET session_id = ?, created_at = ? WHERE chat_id = ?').run(
+        sessionId,
+        now,
+        chatId,
+      ).changes,
+    ) > 0
+  );
+}
+
+/**
  * 写绑定。`chat_id` 是主键 —— 冲突靠数据库保证，不靠应用层检查（§1.1）。
  * @throws BindError('chat_already_bound')
  */

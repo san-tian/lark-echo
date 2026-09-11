@@ -30,12 +30,14 @@ import {
 } from './state/outbound.ts';
 import { getBootstrapRecord, saveBootstrapRecord } from './state/bootstrap.ts';
 import { getBool, getInt, SETTINGS } from './state/settings.ts';
+import { listBindings, updateBindingSession } from './state/bindings.ts';
 import type {
   Attachment,
   ConversationKey,
   ContextBlock,
   InboundMessage,
   OutboundMessage,
+  SessionRef,
   TurnEvent,
 } from './types.ts';
 
@@ -118,6 +120,14 @@ export class Dispatcher {
 
     const ref = sessionRefFor(this.db, chatIdOf(msg));
     if (!ref) return;
+
+    // /new（决策 25）：控制命令，旁路队列直接执行 —— 排队等一个 agent turn 才轮到换会话没有意义
+    if (isNewCommand(msg.text)) {
+      await this.runNew(msg, ref, log);
+      markInbound(this.db, msg.id, 'done');
+      return;
+    }
+
     const window = pendingWindowFor(
       this.db,
       chatIdOf(msg),
@@ -337,6 +347,38 @@ export class Dispatcher {
   }
 
   /**
+   * /new：跟 pi TUI 的 /new 一个语义 —— **换一条全新会话，旧的完整保留**。
+   * 群里换会话必须连绑定一起换（chat 1:1 session），所以这里动的是绑定，
+   * 不是 transcript：本机那条会话连备份都不用做。
+   *
+   * 旧会话若没有别的群还在用，顺手放掉进程（idle 回收本来也会做）。
+   */
+  private async runNew(msg: InboundMessage, ref: SessionRef, log: Logger): Promise<void> {
+    log.info('new-session command received');
+    await this.channel
+      .receipt(msg.conversationKey, 'seen', msg.replyTo ? { replyTo: msg.replyTo } : {})
+      .catch(() => undefined);
+
+    const chatId = chatIdOf(msg);
+    const newId = `is-${Date.now().toString(36)}`;
+    updateBindingSession(this.db, chatId, newId);
+    clearPendingWindow(this.db, chatId);
+
+    const usedElsewhere = listBindings(this.db).some(
+      (b) => b.sessionId === ref.sessionId && b.chatId !== chatId,
+    );
+    if (!usedElsewhere) {
+      await this.queue.bypass(() => this.driver.release(ref.sessionId));
+    }
+
+    await this.reply(
+      msg.conversationKey,
+      `已开新会话 ✅ 本群已切到新会话 ${newId}（空白上下文）。` +
+        `旧会话 ${ref.sessionId} 原样保留在本机，随时可以继续用。`,
+    );
+  }
+
+  /**
    * bootstrapHistory（§6.2）：该群第一次触发时，把最近 N 条历史作为只读上下文注入一次。
    * 幂等：以 (session_id, chat_id) 记入 bootstrap_records，重启/重绑不重复。
    */
@@ -457,6 +499,9 @@ export class Dispatcher {
 }
 
 const formatTime = (ts: number): string => new Date(ts).toISOString().slice(11, 16); // HH:MM
+
+/** 控制命令：独占一行的 /new（决策 25）。带额外文字就按普通消息处理，别误吞。 */
+export const isNewCommand = (text: string): boolean => /^\s*\/new\s*$/i.test(text.trim());
 
 /** 4000 字分片，优先在换行处切，保护代码块（§10.1） */
 export function splitText(text: string, limit: number): string[] {

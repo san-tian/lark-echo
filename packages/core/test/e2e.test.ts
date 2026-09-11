@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import { inbound, keyFor, memoryDb, waitFor } from './helpers.ts';
 import { Dispatcher } from '../src/dispatcher.ts';
 import { SessionQueue } from '../src/queue.ts';
-import { insertBinding } from '../src/state/bindings.ts';
+import { getBinding, insertBinding } from '../src/state/bindings.ts';
 import { pendingWindowFor } from '../src/state/inbound.ts';
-import { setSetting, SETTINGS } from '../src/state/settings.ts';
+import { getSessionAlias, setSessionAlias, setSetting, SETTINGS } from '../src/state/settings.ts';
 import { enqueueOutbound } from '../src/state/outbound.ts';
 import { FakeAdapter, FakeChannel, FakeDriver } from '../src/testing/index.ts';
 import type { Db } from '../src/state/db.ts';
@@ -248,4 +248,53 @@ test('端到端：普通群回复不带 replyInThread', async () => {
   await dispatcher.handleInbound(inbound({ chatId: 'oc_a', text: '喊你', mentioned: true }));
   await waitFor(() => channel.sent.length > 0);
   assert.equal(channel.sent[0]!.replyInThread, undefined);
+});
+
+/* ---------------------------- /new（决策 25） ---------------------------- */
+
+test('/new：群切到一条全新会话，旧会话完整保留', async () => {
+  const { db, channel, driver, dispatcher } = setup({ reply: 'x' });
+  bind(db, 'oc_a');
+  await dispatcher.handleInbound(inbound({ chatId: 'oc_a', text: '/new', mentioned: true }));
+  await waitFor(() => channel.sent.some((m) => m.text.includes('已开新会话')));
+
+  const b = getBinding(db, 'oc_a')!;
+  assert.match(b.sessionId, /^is-/, '换成一个新的逻辑 id（与向导新建同构）');
+  assert.notEqual(b.sessionId, 'sess-1');
+  assert.ok(driver.released.includes('sess-1'), '没有别的群用旧会话，就顺手放掉进程');
+  assert.equal(pendingWindowFor(db, 'oc_a', 50).length, 0, 'pendingWindow 清掉');
+});
+
+test('/new 后下一条消息投到新会话（从零开始）', async () => {
+  const { db, channel, driver, dispatcher } = setup({ reply: 'x' });
+  bind(db, 'oc_a');
+  await dispatcher.handleInbound(inbound({ chatId: 'oc_a', text: '/new', mentioned: true }));
+  await waitFor(() => channel.sent.some((m) => m.text.includes('已开新会话')));
+  const newId = getBinding(db, 'oc_a')!.sessionId;
+
+  await dispatcher.handleInbound(inbound({ chatId: 'oc_a', text: '你好', mentioned: true }));
+  await waitFor(() => channel.sent.length >= 2);
+  assert.equal(driver.acquired.at(-1)!.sessionId, newId, '后续消息要投到新会话');
+});
+
+test('/new：旧会话还被别的群绑着，就只换本群、不放掉进程', async () => {
+  const { db, channel, driver, dispatcher } = setup({ reply: 'x' });
+  bind(db, 'oc_a');
+  bind(db, 'oc_b', 'sess-1'); // 另一个群也绑着 sess-1（1:N）
+  await dispatcher.handleInbound(inbound({ chatId: 'oc_a', text: '/new', mentioned: true }));
+  await waitFor(() => channel.sent.some((m) => m.text.includes('已开新会话')));
+
+  assert.equal(driver.released.includes('sess-1'), false, '旧会话还有别的群在用，不能放');
+  assert.equal(getBinding(db, 'oc_b')!.sessionId, 'sess-1', '另一个群的绑定不动');
+});
+
+test('/new 后面跟别的内容就不是命令，按普通消息走', async () => {
+  const { db, channel, adapter, dispatcher } = setup({ reply: 'ok' });
+  bind(db, 'oc_a');
+  await dispatcher.handleInbound(
+    inbound({ chatId: 'oc_a', text: '/new 然后帮我看看', mentioned: true }),
+  );
+  await waitFor(() => channel.sent.length > 0);
+  assert.equal(adapter.received.length, 1, '按普通消息处理');
+  assert.equal(getBinding(db, 'oc_a')!.sessionId, 'sess-1', '绑定不动');
 });

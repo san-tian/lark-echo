@@ -87,3 +87,4 @@ test('契约：不带 expectExisting 时依然是新建（群里首次绑定走�
   assert.equal(handle.ref.sessionId, 'brand-new-001');
   await adapter.stop(handle);
 });
+
