@@ -246,3 +246,25 @@ test('/api/fs 正常时原样返回目录列表', async () => {
     },
   );
 });
+
+test('/api/models 包成 {models:[...]}（裸数组会被客户端当成空列表）', async () => {
+  const server = new UiServer({
+    data: {
+      state: async () => ({}),
+      listModels: async (agent: string) => [{ id: 'm1', label: 'm1', provider: 'p' }],
+    } as unknown as UiData,
+    port: 0,
+  });
+  const { port } = await server.start();
+  const base = `http://127.0.0.1:${port}`;
+  try {
+    const page = await fetch(`${base}/`);
+    await page.text();
+    const cookie = (page.headers.getSetCookie?.() ?? []).map((c) => c.split(';')[0]).join('; ');
+    const res = await fetch(`${base}/api/models?agent=pi`, { headers: { cookie } });
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { models: [{ id: 'm1', label: 'm1', provider: 'p' }] });
+  } finally {
+    await server.close();
+  }
+});

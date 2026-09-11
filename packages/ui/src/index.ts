@@ -216,7 +216,12 @@ function act(fn, okMsg) {
   if (busy) return Promise.resolve();
   busy = true;
   document.body.classList.add('busy');
-  return fn().then(function (r) { if (okMsg) toast(okMsg, 'ok'); return r; })
+  return fn()
+    .then(function (r) {
+      var msg = typeof okMsg === 'function' ? okMsg(r) : okMsg;
+      if (msg) toast(msg, 'ok');
+      return r;
+    })
     .catch(function (e) { toast(e.message || String(e), 'error'); throw e; })
     .finally(function () { busy = false; document.body.classList.remove('busy'); refresh(); });
 }
@@ -337,9 +342,11 @@ function loadMembers() {
 function loadModels(agent) {
   if (modelsCache[agent]) { render(); return Promise.resolve(modelsCache[agent]); }
   return getJSON('/api/models?agent=' + agent).then(function (list) {
-    modelsCache[agent] = list || [];
+    // 服务端是 {models:[...]}；兼容一下老版本返回裸数组
+    var arr = Array.isArray(list) ? list : (list && list.models) || [];
+    modelsCache[agent] = arr;
     render();
-    return modelsCache[agent];
+    return arr;
   });
 }
 
@@ -942,14 +949,27 @@ function openModelDlg(chatId) {
         return { value: v, label: v };
       })
     );
+    var live = sessionOf(b.chatId);
     var hint = hasList
-      ? '换模型要重启 agent 进程，下一轮生效。'
+      ? (live && live.capabilities.modelSwitch === 'runtime'
+          ? '会话在线，切换立即生效。'
+          : live
+            ? '切换后要重启 agent 进程，下一轮生效。'
+            : '会话空闲，保存后下次启动生效。')
       : b.agent + ' 没提供模型列表，直接填 provider/model；填错由 agent 自己报错。';
     openChoose('换模型 · ' + label, hint, opts, b.model || '', !hasList).then(function (v) {
       if (v === null) return;
-      act(function () {
-        return api('POST', '/api/model', { sessionId: b.sessionId, model: v });
-      }, v ? '模型已设为 ' + v : '已改回 agent 默认模型');
+      act(
+        function () {
+          return api('POST', '/api/model', { sessionId: b.sessionId, model: v });
+        },
+        function (r) {
+          if (!v) return '已改回 agent 默认模型';
+          return r && r.applied === 'runtime'
+            ? '模型已切换：' + v + '（立即生效）'
+            : '模型已保存：' + v + '（下次启动会话生效）';
+        },
+      );
     });
   });
 }

@@ -152,7 +152,9 @@ export class UiServer {
       }
       if (url.pathname === '/api/models') {
         const agent = (url.searchParams.get('agent') ?? 'pi') as 'pi' | 'claude' | 'codex';
-        return this.json(res, 200, await data.listModels(agent));
+        // 包成 {models} 而不是裸数组：客户端按字段名取，裸数组会被当成空列表，
+        // 换模型对话框永远只能手填（列表里一个模型都没有）
+        return this.json(res, 200, { models: await data.listModels(agent) });
       }
       if (url.pathname === '/api/members') {
         return this.json(res, 200, await data.listMembers(url.searchParams.get('chatId') ?? ''));

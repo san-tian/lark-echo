@@ -220,3 +220,23 @@ test('目录列表端点带 path 参数走真实接口', () => {
   assert.match(js, /getJSON\('\/api\/fs'/);
   assert.match(js, /encodeURIComponent\(path\)/);
 });
+
+/* ---------------------------- 换模型流程 ---------------------------- */
+
+test('loadModels 按 {models:[...]} 取列表（兼容老版本裸数组）', () => {
+  const js = clientScript(page());
+  assert.match(js, /Array\.isArray\(list\) \? list : \(list && list\.models\)/);
+});
+
+test('换模型的结果按 applied 区分提示：runtime = 立即生效', () => {
+  const js = clientScript(page());
+  assert.match(js, /applied === 'runtime'/);
+  assert.match(js, /立即生效/);
+  assert.match(js, /下次启动会话生效/);
+});
+
+test('换模型对话框的提示区分在线/空闲/需重启三种', () => {
+  const js = clientScript(page());
+  assert.match(js, /会话在线，切换立即生效/);
+  assert.match(js, /会话空闲，保存后下次启动生效/);
+});
