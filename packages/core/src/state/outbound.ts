@@ -12,6 +12,8 @@ export interface OutboundRecord {
   /** 附件（决策 23）；与 text 互斥但不强制 —— 都是「这一条要发出去的东西」 */
   attachments?: Attachment[];
   replyTo?: string;
+  /** 回复要落在话题里（决策 24） */
+  replyInThread: boolean;
   status: OutboundStatus;
   attempts: number;
   sentMsgId?: string;
@@ -25,6 +27,7 @@ interface OutboundRow {
   chat_id: string;
   text: string;
   reply_to: string | null;
+  reply_in_thread: number;
   status: string;
   attempts: number;
   sent_msg_id: string | null;
@@ -40,6 +43,7 @@ const toRecord = (r: OutboundRow): OutboundRecord => ({
   text: r.text,
   ...(parseMedia(r.media) ? { attachments: parseMedia(r.media)! } : {}),
   replyTo: r.reply_to ?? undefined,
+  replyInThread: Boolean(r.reply_in_thread),
   status: r.status as OutboundStatus,
   attempts: Number(r.attempts),
   sentMsgId: r.sent_msg_id ?? undefined,
@@ -69,14 +73,15 @@ export function enqueueOutbound(
   const chatId = msg.conversationKey.replace(/^feishu:chat:/, '');
   db.prepare(
     `INSERT OR IGNORE INTO outbound_messages
-       (turn_id, seq, chat_id, text, reply_to, status, attempts, created_at, media)
-     VALUES (?, ?, ?, ?, ?, 'pending', 0, ?, ?)`,
+       (turn_id, seq, chat_id, text, reply_to, reply_in_thread, status, attempts, created_at, media)
+     VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?)`,
   ).run(
     msg.turnId,
     msg.seq,
     chatId,
     msg.text,
     msg.replyTo ?? null,
+    msg.replyInThread ? 1 : 0,
     now,
     msg.attachments?.length ? JSON.stringify(msg.attachments) : null,
   );

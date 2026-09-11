@@ -60,7 +60,7 @@ test('未 @ 的消息 → context', () => {
   assert.equal(decideInbound(db, inbound({ chatId: 'oc_a', mentioned: false })).action, 'context');
 });
 
-test('话题群 → thread-unsupported（缺口 H）', () => {
+test('话题群按普通群处理（决策 24）：@了就触发，没 @ 进 context', () => {
   const db = memoryDb();
   insertBinding(db, {
     chatId: 'oc_a',
@@ -71,6 +71,14 @@ test('话题群 → thread-unsupported（缺口 H）', () => {
     mirrorMode: 'off',
     createdAt: 1,
   });
-  const decision = decideInbound(db, inbound({ chatId: 'oc_a', threadId: 'omt_123' }));
-  assert.equal(decision.action, 'thread-unsupported');
+  const triggered = decideInbound(
+    db,
+    inbound({ chatId: 'oc_a', threadId: 'omt_123', mentioned: true }),
+  );
+  assert.equal(triggered.action, 'trigger', '话题内 @ 也要触发，不再拒绝');
+  const context = decideInbound(
+    db,
+    inbound({ chatId: 'oc_a', threadId: 'omt_123', mentioned: false }),
+  );
+  assert.equal(context.action, 'context', '话题里没 @ 的照旧进 pendingWindow');
 });

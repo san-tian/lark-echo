@@ -62,7 +62,10 @@ export function toInboundMessage(
     ts: Number(message?.create_time ?? Date.now()),
     mentioned,
     ...(messageId ? { replyTo: messageId } : {}),
-    ...(message?.thread_id ? { threadId: message.thread_id } : {}),
+    // 决策 24：话题内消息带 thread_id；根消息可能只有 root_id —— 两者有其一就算「在话题里」
+    ...(message?.thread_id || message?.root_id
+      ? { threadId: message.thread_id || message.root_id }
+      : {}),
   };
 }
 

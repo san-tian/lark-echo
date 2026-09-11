@@ -221,3 +221,31 @@ test('端到端：chat_delivery 排在其他上下文之后，紧邻用户消息
   assert.ok(kinds.length >= 2, `应有多个上下文块，实际 ${kinds.join(',')}`);
   assert.equal(kinds[kinds.length - 1], 'instructions', 'chat_delivery 应在最后');
 });
+
+test('端到端：话题里的 @ → 回复带 replyInThread，落到话题里（决策 24）', async () => {
+  const { db, channel, adapter, dispatcher } = setup({ reply: '话题回复' });
+  bind(db, 'oc_a');
+  await dispatcher.handleInbound(
+    inbound({
+      chatId: 'oc_a',
+      text: '话题里喊你',
+      threadId: 'omt_123',
+      mentioned: true,
+      replyTo: 'om_trigger',
+    }),
+  );
+  await waitFor(() => channel.sent.length > 0);
+
+  assert.equal(adapter.received.length, 1, '话题消息要触发');
+  const sent = channel.sent[0]!;
+  assert.equal(sent.replyInThread, true, '出站要落在话题里');
+  assert.equal(sent.replyTo, 'om_trigger', '仍然回复你 @ 的那条');
+});
+
+test('端到端：普通群回复不带 replyInThread', async () => {
+  const { db, channel, dispatcher } = setup({ reply: '普通回复' });
+  bind(db, 'oc_a');
+  await dispatcher.handleInbound(inbound({ chatId: 'oc_a', text: '喊你', mentioned: true }));
+  await waitFor(() => channel.sent.length > 0);
+  assert.equal(channel.sent[0]!.replyInThread, undefined);
+});

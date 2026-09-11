@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS outbound_messages (
   sent_msg_id TEXT,
   created_at INTEGER NOT NULL,
   media      TEXT,                         -- 附件（决策 23）：Attachment[] 的 JSON，文本消息为 NULL
+  reply_in_thread INTEGER NOT NULL DEFAULT 0,  -- 回复落在话题里（决策 24）
   UNIQUE(turn_id, seq)                     -- 出站幂等（缺口 B）
 );
 CREATE INDEX IF NOT EXISTS idx_outbound_pending ON outbound_messages(status, created_at);
@@ -116,6 +117,7 @@ function ensureColumn(db: Db, table: string, ddl: string): void {
 
 function migrate(db: Db): void {
   ensureColumn(db, 'outbound_messages', 'media TEXT');
+  ensureColumn(db, 'outbound_messages', 'reply_in_thread INTEGER NOT NULL DEFAULT 0');
 }
 
 export function closeDb(db: Db): void {

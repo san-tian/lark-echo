@@ -8,21 +8,20 @@ export const chatIdOfKey = (key: ConversationKey): string => key.replace(/^feish
 export type InboundDecision =
   | { action: 'trigger'; binding: NonNullable<ReturnType<typeof getBinding>> }
   | { action: 'context'; binding: NonNullable<ReturnType<typeof getBinding>> }
-  | { action: 'unbound' }
-  | { action: 'thread-unsupported'; binding: NonNullable<ReturnType<typeof getBinding>> };
+  | { action: 'unbound' };
 
 /**
  * 入站分流（§4.3 / §8）：
  * - 未绑定 → unbound（忽略 + 回「未绑定」）
- * - 话题群 → thread-unsupported（缺口 H：M0 明确提示不支持）
  * - 绑定者 @机器人 → trigger（`ownerOpenId === '*'` 表示任何人，仅用于本地调试）
  * - 其他一切 → context（进 pendingWindow，`contextVisibility: "all"`）
+ *
+ * 话题群按普通群处理（决策 24）：会话/绑定仍是 chat 维度，只有回复要落进话题。
  */
 export function decideInbound(db: Db, msg: InboundMessage): InboundDecision {
   const chatId = chatIdOfKey(msg.conversationKey);
   const binding = getBinding(db, chatId);
   if (!binding) return { action: 'unbound' };
-  if (msg.threadId) return { action: 'thread-unsupported', binding };
   if (msg.mentioned && (binding.ownerOpenId === '*' || msg.actor.id === binding.ownerOpenId)) {
     return { action: 'trigger', binding };
   }

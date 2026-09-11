@@ -111,12 +111,6 @@ export class Dispatcher {
       markInbound(this.db, msg.id, 'done');
       return;
     }
-    if (decision.action === 'thread-unsupported') {
-      log.warn('topic group unsupported');
-      await this.reply(msg.conversationKey, '暂不支持话题群（topic group），请把机器人拉进普通群。');
-      markInbound(this.db, msg.id, 'dropped');
-      return;
-    }
     if (decision.action === 'context') {
       log.debug('stored as pending-window context');
       return; // 已按 context 落盘，不触发
@@ -212,11 +206,12 @@ export class Dispatcher {
 
       clearPendingWindow(this.db, chatId);
       const outgoing = await this.collectMedia(result.text ?? '', ref.cwd);
+      const replyInThread = Boolean(msg.threadId);
       if (outgoing.text.trim()) {
-        await this.deliver(msg.conversationKey, turnId, outgoing.text, msg.replyTo, outgoing.attachments);
+        await this.deliver(msg.conversationKey, turnId, outgoing.text, msg.replyTo, outgoing.attachments, replyInThread);
       } else if (outgoing.attachments.length > 0) {
         // 只发了文件、没有正文：附件自己就是回复
-        await this.deliver(msg.conversationKey, turnId, '', msg.replyTo, outgoing.attachments);
+        await this.deliver(msg.conversationKey, turnId, '', msg.replyTo, outgoing.attachments, replyInThread);
       }
       markInbound(this.db, msg.id, 'done');
       await this.channel
@@ -392,6 +387,7 @@ export class Dispatcher {
     text: string,
     replyTo?: string,
     attachments: Attachment[] = [],
+    replyInThread = false,
   ): Promise<void> {
     const chunks = text ? splitText(text, this.chunkLimit) : [];
     for (let seq = 0; seq < chunks.length; seq++) {
@@ -401,6 +397,7 @@ export class Dispatcher {
         seq,
         text: chunks[seq]!,
         ...(replyTo ? { replyTo } : {}),
+        ...(replyInThread ? { replyInThread: true } : {}),
       });
     }
     // 附件排在所有文本分片之后：seq 从 1000 起，一个 turn 不至于叠到 1000 个分片
@@ -412,6 +409,7 @@ export class Dispatcher {
         text: '',
         attachments: [att],
         ...(replyTo ? { replyTo } : {}),
+        ...(replyInThread ? { replyInThread: true } : {}),
       });
     });
     await this.flushOutbound();
@@ -431,6 +429,7 @@ export class Dispatcher {
           conversationKey: conversationKeyFor(record.chatId),
           text: record.text,
           ...(record.attachments?.length ? { attachments: record.attachments } : {}),
+          ...(record.replyInThread ? { replyInThread: true } : {}),
           turnId: record.turnId,
           seq: record.seq,
           ...(record.replyTo ? { replyTo: record.replyTo } : {}),

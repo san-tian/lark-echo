@@ -181,3 +181,16 @@ test('toInboundMessage 把附件挂到消息上（文本占位符保留）', () 
   assert.equal(msg?.text, '[图片]', '占位符保留：写进 pendingWindow/历史时得看得见');
   assert.deepEqual(msg?.attachments, [{ kind: 'image', key: 'img_1' }]);
 });
+
+test('话题根消息只有 root_id 也视为在话题里（决策 24）', () => {
+  const msg = toInboundMessage(baseEvent({ message: { root_id: 'omt_root' } }), {});
+  assert.equal(msg?.threadId, 'omt_root');
+});
+
+test('thread_id 优先于 root_id', () => {
+  const msg = toInboundMessage(
+    baseEvent({ message: { thread_id: 'omt_1', root_id: 'omt_root' } }),
+    {},
+  );
+  assert.equal(msg?.threadId, 'omt_1');
+});

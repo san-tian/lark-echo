@@ -150,14 +150,14 @@ export class FeishuChannel implements Channel {
     if (msg.attachments?.length) {
       let lastId = '';
       for (const att of msg.attachments) {
-        lastId = await this.sendMedia(chatId, att, msg.replyTo, uuid);
+        lastId = await this.sendMedia(chatId, att, msg.replyTo, uuid, msg.replyInThread);
       }
       return { messageId: lastId };
     }
     const chunks = splitText(msg.text, this.opts.chunkLimit ?? 4000);
     let messageId = '';
     for (const chunk of chunks) {
-      messageId = await this.sendText(chatId, chunk, msg.replyTo, uuid);
+      messageId = await this.sendText(chatId, chunk, msg.replyTo, uuid, msg.replyInThread);
     }
     return { messageId };
   }
@@ -166,21 +166,33 @@ export class FeishuChannel implements Channel {
    * 发一段文本：**富文本 post + `md` 元素**（OpenClaw 同款）—— 群里能直接看到代码块、
    * 表格、加粗；纯 text 消息只会把 markdown 原样展出。
    *
-   * reply 目标被撤回时降级成新消息而不是反复重试（`WITHDRAWN_REPLY_CODES`）。
+   * reply 目标被撤回时降级成新消息而不是反复重试（`WITHDRAWN_REPLY_CODES`）——
+   * 但**话题回复不许降级**：把本该落在话题里的话发到主频道比不发更糟（OpenClaw 同款）。
    */
-  private async sendText(chatId: string, chunk: string, replyTo?: string, uuid?: string): Promise<string> {
+  private async sendText(
+    chatId: string,
+    chunk: string,
+    replyTo?: string,
+    uuid?: string,
+    replyInThread = false,
+  ): Promise<string> {
     const content = textContent(chunk);
     if (replyTo) {
       try {
         return this.readMessageId(
           await this.client.im.message.reply({
             path: { message_id: replyTo },
-            data: { content, msg_type: 'post', ...(uuid ? { uuid } : {}) },
+            data: {
+              content,
+              msg_type: 'post',
+              ...(uuid ? { uuid } : {}),
+              ...(replyInThread ? { reply_in_thread: true } : {}),
+            },
           }),
           'feishu send failed',
         );
       } catch (err) {
-        if (!isWithdrawnReplyError(err)) throw err;
+        if (!isWithdrawnReplyError(err) || replyInThread) throw err;
         this.logger.warn('reply target gone, falling back to new message', { replyTo });
       }
     }
@@ -214,11 +226,12 @@ export class FeishuChannel implements Channel {
     att: Attachment,
     replyTo?: string,
     uuid?: string,
+    replyInThread = false,
   ): Promise<string> {
     const data = await readFile(att.localPath);
     const msgType = mediaMsgType(att.kind);
     const content = await this.uploadMedia(att, data, msgType);
-    return this.sendMediaMessage(chatId, content, msgType, att, replyTo, uuid);
+    return this.sendMediaMessage(chatId, content, msgType, att, replyTo, uuid, replyInThread);
   }
 
   private async sendMediaMessage(
@@ -228,18 +241,24 @@ export class FeishuChannel implements Channel {
     att: Attachment,
     replyTo?: string,
     uuid?: string,
+    replyInThread = false,
   ): Promise<string> {
     if (replyTo) {
       try {
         return this.readMessageId(
           await this.client.im.message.reply({
             path: { message_id: replyTo },
-            data: { content, msg_type: msgType, ...(uuid ? { uuid } : {}) },
+            data: {
+              content,
+              msg_type: msgType,
+              ...(uuid ? { uuid } : {}),
+              ...(replyInThread ? { reply_in_thread: true } : {}),
+            },
           }),
           'feishu media send failed',
         );
       } catch (err) {
-        if (!isWithdrawnReplyError(err)) throw err;
+        if (!isWithdrawnReplyError(err) || replyInThread) throw err;
         this.logger.warn('reply target gone, falling back to new message', {
           replyTo,
           attachment: att.name,

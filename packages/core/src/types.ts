@@ -64,6 +64,8 @@ export interface OutboundMessage {
   text: string;
   attachments?: Attachment[];
   replyTo?: string;
+  /** 回复落在话题里（决策 24）：触发消息来自话题时置 true */
+  replyInThread?: boolean;
   /** 幂等键：同一 turn 的同一 seq 只发一次（缺口 B） */
   turnId: string;
   seq: number;
